@@ -77,7 +77,8 @@ export class Transcript {
       chords: detectChords(notes),
       key: estimateKey(notes),
       rhythm: estimateRhythm(notes),
-      corrected: this.correctedUntil > 0 && this.correctedUntil >= now - 1,
+      correctedUntil: this.correctedUntil > 0 ? this.correctedUntil : null,
+      now,
     }
   }
 

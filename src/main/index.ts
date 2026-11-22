@@ -75,13 +75,9 @@ async function main(): Promise<void> {
     if (kind === 'on') transcript.noteOn(pitch, now(), velocity, 'midi')
     else transcript.noteOff(pitch, now(), 'midi')
   })
-  ipcMain.on(CHANNELS.notes, (_e, notes: NoteEvent[]) => {
-    // The window has its own clock. A batch is sent the moment its last note
-    // ends, so shift it to end "now" on the session clock.
-    const end = Math.max(...notes.map((n) => n.start + n.duration))
-    const shift = now() - end
-    transcript.add(notes.map((n) => ({ ...n, start: n.start + shift })))
-  })
+  ipcMain.handle(CHANNELS.clock, () => now())
+  ipcMain.on(CHANNELS.notes, (_e, notes: NoteEvent[]) => transcript.add(notes))
+  ipcMain.on(CHANNELS.revise, (_e, from: number, to: number, notes: NoteEvent[]) => transcript.revise(from, to, 'audio', notes))
   ipcMain.on(CHANNELS.micAudio, (_e, pcm: ArrayBuffer) => voice?.micAudio(pcm))
   ipcMain.on(CHANNELS.interrupt, () => {
     voice?.cancel()

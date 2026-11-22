@@ -32,6 +32,7 @@ export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [mic, setMic] = useState<MicHandle | null>(null)
   const [midiInputs, setMidiInputs] = useState<string[] | null>(null)
+  const [engine, setEngine] = useState('')
   const [draft, setDraft] = useState('')
   const logEnd = useRef<HTMLDivElement>(null)
 
@@ -82,7 +83,18 @@ export function App() {
       mic.stop()
       return setMic(null)
     }
-    setMic(await startMic({ onSpeechPcm: window.jam.micAudio, onNotes: window.jam.notes, now: clock }))
+    // Stamp audio on the main process's session clock, so fast notes and
+    // slow-pass corrections line up with MIDI.
+    const offset = (await window.jam.clock()) - clock()
+    setMic(
+      await startMic({
+        onSpeechPcm: window.jam.micAudio,
+        onNotes: window.jam.notes,
+        onCorrection: (c) => window.jam.revise(c.from, c.to, c.notes),
+        onEngine: setEngine,
+        now: () => clock() + offset,
+      }),
+    )
   }
 
   const connectMidi = async () => setMidiInputs(await startMidi((kind, pitch, velocity) => window.jam.midi(kind, pitch, velocity, clock())))
@@ -125,7 +137,8 @@ export function App() {
           <p className="meta">
             {snapshot.key ? `Key ${snapshot.key.tonic} ${snapshot.key.mode}` : 'Key unclear'}
             {snapshot.rhythm ? ` · ${snapshot.rhythm.bpm} bpm` : ''} · {snapshot.notes.length} notes in the last {snapshot.windowSeconds}s ·{' '}
-            {snapshot.corrected ? 'corrected' : 'fast pass'}
+            {snapshot.correctedUntil === null ? 'fast pass' : `corrected to ${Math.max(0, snapshot.now - snapshot.correctedUntil).toFixed(0)}s ago`}
+            {engine ? ` · ${engine}` : ''}
           </p>
         )}
       </main>

@@ -20,6 +20,10 @@ export interface RendererApi {
   midi(kind: 'on' | 'off', pitch: number, velocity: number, time: number): void
   /** Fast-path notes from audio or video transcription. */
   notes(notes: NoteEvent[]): void
+  /** Slow-pass correction: replace audio notes in [from, to) with these. */
+  revise(from: number, to: number, notes: NoteEvent[]): void
+  /** Seconds on the main process's session clock. */
+  clock(): Promise<number>
   /** Mic audio for speech-to-text: 16 kHz mono PCM16. */
   micAudio(pcm16: ArrayBuffer): void
   snapshot(windowSeconds?: number): Promise<Snapshot>
@@ -31,6 +35,8 @@ export const CHANNELS = {
   say: 'jam:say',
   midi: 'jam:midi',
   notes: 'jam:notes',
+  revise: 'jam:revise',
+  clock: 'jam:clock',
   micAudio: 'jam:mic',
   snapshot: 'jam:snapshot',
   interrupt: 'jam:interrupt',

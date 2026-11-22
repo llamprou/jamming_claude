@@ -33,10 +33,12 @@ You need an Anthropic API key. For voice, add a Deepgram key, a Cartesia key and
 
 ## Status
 
-Working and tested: MIDI input, chord/key/tempo analysis, all seven views, clip playback and MIDI export, the agent loop with its tools, taste memory.
+Working and tested: MIDI input, chord/key/tempo analysis, all seven views, clip playback and MIDI export, the agent loop with its tools, taste memory, and two-speed audio transcription (a fast single-note tracker, corrected every few seconds by a polyphonic model that hears chords).
 
-Written but not yet run against the real services: the voice pipeline (needs keys and a microphone) and audio pitch input in the app (the detector itself is tested).
+Audio transcription has only been tested with synthesized tones, not a real instrument through a real microphone. In the cloud test machine the polyphonic model runs on the CPU, slower than real time; on a Mac it should use the GPU, which has not been measured.
 
-Not built yet: the slow polyphonic correction pass for audio, video input, sampled instrument sounds (playback is a simple built-in synth), MIDI output to external gear, and the packaged `.app`.
+Written but not yet run against the real services: the voice pipeline (needs keys and a microphone).
+
+Not built yet: video input, sampled instrument sounds (playback is a simple built-in synth), MIDI output to external gear, and the packaged `.app`.
 
 See `CLAUDE.md` for the code layout.

@@ -46,10 +46,10 @@ describe('transcript', () => {
     expect(t.snapshot(1).chords[0]?.symbol).toBe('CM') // still held
     t.noteOff(60, 1, 'midi')
     t.add([{ ...note(61, 2), source: 'audio', confidence: 0.4 }])
-    expect(t.snapshot(3).corrected).toBe(false)
+    expect(t.snapshot(3).correctedUntil).toBeNull()
     t.revise(1.5, 3, 'audio', [{ ...note(62, 2), source: 'audio' }])
     const snap = t.snapshot(3)
-    expect(snap.corrected).toBe(true)
+    expect(snap.correctedUntil).toBe(3)
     expect(snap.notes.map((n) => n.pitch)).toEqual([60, 64, 67, 62])
   })
 })

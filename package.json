@@ -23,6 +23,8 @@
     "@cartesia/cartesia-js": "^5.2.0",
     "@deepgram/sdk": "^5.20.0",
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "@spotify/basic-pitch": "^1.0.1",
+    "@tensorflow/tfjs": "^3.21.0",
     "@tonejs/midi": "^2.0.28",
     "abcjs": "^6.7.3",
     "react": "^19.3.1",

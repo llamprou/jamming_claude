@@ -4,7 +4,7 @@ import { noteName } from '@shared/music/analysis'
 import { clipLengthBeats, clipToMidi, clipToNotes, progressionTrack } from '@shared/music/clip'
 import { chordPitches, chordsToText, rhythmToText } from '@shared/music/render'
 import type { Transcript } from '@shared/music/transcript'
-import type { Clip, NoteEvent } from '@shared/music/types'
+import type { Clip, NoteEvent, Snapshot } from '@shared/music/types'
 import type { MainEvent } from '@shared/ipc'
 import type { TasteMemory } from '../memory/taste'
 
@@ -16,6 +16,14 @@ export interface ToolContext {
   emit(event: MainEvent): void
   /** Present only when self-extension is enabled (running from a source checkout). */
   extend?: (request: string) => Promise<string>
+}
+
+/** Tell the model how far to trust what it is about to read. */
+function describeAccuracy(snap: Snapshot): string {
+  if (!snap.notes.some((n) => n.source === 'audio')) return 'exact (MIDI input)'
+  if (snap.correctedUntil === null) return 'audio, fast pass only: single notes that may be wrong; chords are not heard yet'
+  const lag = Math.max(0, snap.now - snap.correctedUntil)
+  return `audio, corrected by the polyphonic pass except the most recent ${lag.toFixed(0)}s, which are single-note guesses`
 }
 
 const text = (value: string) => ({ content: [{ type: 'text' as const, text: value }] })
@@ -48,7 +56,7 @@ export function createJamTools(ctx: ToolContext) {
       if (snap.notes.length === 0) return text(`Nothing heard in the last ${seconds} seconds.`)
       const lines = [
         `Window: last ${seconds}s, ${snap.notes.length} notes, sources: ${[...new Set(snap.notes.map((n) => n.source))].join(', ')}`,
-        `Transcription: ${snap.corrected ? 'corrected by the slow pass' : 'fast pass only, may contain wrong or missing notes'}`,
+        `Transcription: ${describeAccuracy(snap)}`,
         `Key: ${snap.key ? `${snap.key.tonic} ${snap.key.mode} (fit ${snap.key.score.toFixed(2)})` : 'unclear'}`,
         `Chords: ${chordsToText(snap.chords)}`,
         `Rhythm: ${rhythmToText(snap.rhythm)}`,

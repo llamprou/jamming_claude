@@ -1,5 +1,8 @@
 import type { Clip, NoteEvent } from '@shared/music/types'
 import { detectPitch, hzToMidi } from '@shared/music/pitch'
+import { AudioRing, Resampler, SlowPass, type Correction } from '@shared/music/slowpass'
+import tapWorkletUrl from './tap.worklet.js?url&no-inline'
+import type { TranscribeRequest, TranscribeResponse } from './transcriber.worker'
 
 /**
  * All sound in and out of the app goes through one AudioContext in the
@@ -104,17 +107,6 @@ export function flushVoice(): void {
 
 /* ---------- microphone: speech to main, pitch to the transcript ---------- */
 
-const WORKLET = `
-class Tap extends AudioWorkletProcessor {
-  process(inputs) {
-    const channel = inputs[0] && inputs[0][0]
-    if (channel) this.port.postMessage(channel.slice(0))
-    return true
-  }
-}
-registerProcessor('tap', Tap)
-`
-
 export interface MicHandle {
   stop(): void
 }
@@ -122,12 +114,18 @@ export interface MicHandle {
 /**
  * Open the mic once and split it two ways:
  *  - speech path: echo-cancelled, downsampled to 16 kHz PCM16 for speech-to-text
- *  - music path:  the same signal through a fast monophonic pitch tracker.
- *    This is the lossy fast pass; the slow polyphonic pass corrects it later.
+ *  - music path, fast: a monophonic pitch tracker puts single notes on screen
+ *    within tens of milliseconds.
+ *  - music path, slow: every few seconds a polyphonic model in a worker
+ *    re-hears the same audio (chords included) and its notes replace the fast
+ *    pass's guesses for that stretch.
  */
 export async function startMic(opts: {
   onSpeechPcm(pcm16: ArrayBuffer): void
   onNotes(notes: NoteEvent[]): void
+  onCorrection(correction: Correction): void
+  /** Reports which engine the slow pass is running on, and how long a run takes. */
+  onEngine?(description: string): void
   now(): number
 }): Promise<MicHandle> {
   const audio = ctx()
@@ -135,10 +133,40 @@ export async function startMic(opts: {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
   })
-  await audio.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' })))
+  await audio.audioWorklet.addModule(tapWorkletUrl)
   const source = audio.createMediaStreamSource(stream)
   const tap = new AudioWorkletNode(audio, 'tap')
   source.connect(tap)
+
+  // Slow pass: keep the last 30 s at the model's sample rate and let the
+  // scheduler decide when a stretch is ready to be re-heard.
+  const worker = new Worker(new URL('./transcriber.worker.ts', import.meta.url), { type: 'module' })
+  const pending = new Map<number, { resolve(notes: NonNullable<TranscribeResponse['notes']>): void; reject(error: Error): void }>()
+  let requestId = 0
+  worker.onmessage = (message: MessageEvent<TranscribeResponse>) => {
+    const { id, notes, error, backend, ms } = message.data
+    const request = pending.get(id)
+    pending.delete(id)
+    if (notes) {
+      opts.onEngine?.(`polyphonic pass on ${backend}, ${ms} ms`)
+      request?.resolve(notes)
+    } else {
+      opts.onEngine?.(`polyphonic pass failed: ${error}`)
+      request?.reject(new Error(error))
+    }
+  }
+  const modelRate = new Resampler(audio.sampleRate)
+  const ring = new AudioRing(30)
+  const slowPass = new SlowPass(
+    ring,
+    (samples) =>
+      new Promise((resolve, reject) => {
+        const id = ++requestId
+        pending.set(id, { resolve, reject })
+        worker.postMessage({ id, audio: samples } satisfies TranscribeRequest, [samples.buffer])
+      }),
+    opts.onCorrection,
+  )
 
   const ratio = audio.sampleRate / 16000
   let resamplePhase = 0
@@ -158,6 +186,9 @@ export async function startMic(opts: {
 
   tap.port.onmessage = (message: MessageEvent<Float32Array>) => {
     const block = message.data
+
+    ring.push(modelRate.process(block), opts.now())
+    slowPass.tick()
 
     for (; resamplePhase < block.length; resamplePhase += ratio) {
       speech.push(Math.max(-1, Math.min(1, block[Math.floor(resamplePhase)]!)) * 32767)
@@ -192,6 +223,7 @@ export async function startMic(opts: {
   return {
     stop() {
       tap.port.onmessage = null
+      worker.terminate()
       source.disconnect()
       stream.getTracks().forEach((t) => t.stop())
       frame = new Float32Array(0)

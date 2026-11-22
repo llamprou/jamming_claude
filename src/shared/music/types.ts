@@ -72,6 +72,12 @@ export interface Snapshot {
   chords: ChordSpan[]
   key: KeyEstimate | null
   rhythm: RhythmEstimate | null
-  /** True once the slow pass has corrected this window. */
-  corrected: boolean
+  /**
+   * Session time up to which audio notes have been replaced by the slow,
+   * polyphonic pass. Later audio notes are fast-pass guesses. Null if the slow
+   * pass has not run.
+   */
+  correctedUntil: number | null
+  /** Session time the snapshot was taken at. */
+  now: number
 }
