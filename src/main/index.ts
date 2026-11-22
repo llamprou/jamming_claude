@@ -1,0 +1,120 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { BrowserWindow, app, ipcMain, session as electronSession } from 'electron'
+import { CHANNELS, type MainEvent } from '@shared/ipc'
+import { Transcript } from '@shared/music/transcript'
+import type { NoteEvent } from '@shared/music/types'
+import { JamSession } from './agent/session'
+import { TasteMemory } from './memory/taste'
+import { Voice } from './voice/voice'
+
+/** Minimal .env loader for development; real environment variables win. */
+function loadDotEnv(): void {
+  const path = join(app.getAppPath(), '.env')
+  if (!existsSync(path)) return
+  for (const line of readFileSync(path, 'utf8').split('\n')) {
+    const match = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line)
+    if (match && match[2] && process.env[match[1]!] === undefined) process.env[match[1]!] = match[2].replace(/^["']|["']$/g, '')
+  }
+}
+
+let window: BrowserWindow | null = null
+const emit = (event: MainEvent) => window?.webContents.send(CHANNELS.event, event)
+
+async function main(): Promise<void> {
+  await app.whenReady()
+  loadDotEnv()
+
+  const startedAt = performance.now()
+  const now = () => (performance.now() - startedAt) / 1000
+  const transcript = new Transcript()
+  const memory = new TasteMemory(process.env.JAM_DATA_DIR ?? join(app.getPath('userData'), 'taste'))
+
+  const missing = ['ANTHROPIC_API_KEY', 'DEEPGRAM_API_KEY', 'CARTESIA_API_KEY', 'JAM_TTS_VOICE_ID'].filter((name) => !process.env[name])
+  const voiceEnabled = !missing.some((name) => name !== 'ANTHROPIC_API_KEY')
+
+  let voice: Voice | null = null
+  const jam = new JamSession(
+    { transcript, memory, now, emit },
+    {
+      model: process.env.JAM_AGENT_MODEL ?? 'claude-opus-5-5',
+      voice: voiceEnabled,
+      // Self-extension needs the source tree, so it is on in development only.
+      sourceDir: app.isPackaged ? undefined : app.getAppPath(),
+      onSpeech: (chunk) => voice?.speak(chunk),
+      onSpeechEnd: () => voice?.endUtterance(),
+    },
+  )
+
+  if (voiceEnabled) {
+    voice = new Voice(
+      {
+        deepgramKey: process.env.DEEPGRAM_API_KEY!,
+        cartesiaKey: process.env.CARTESIA_API_KEY!,
+        sttModel: process.env.JAM_STT_MODEL ?? 'flux-general-en',
+        ttsModel: process.env.JAM_TTS_MODEL ?? 'sonic-3.5',
+        ttsVoiceId: process.env.JAM_TTS_VOICE_ID!,
+      },
+      {
+        onPartial: (text) => emit({ type: 'transcript', role: 'user', text, final: false }),
+        onTurn: (text) => jam.say(text),
+        onBargeIn: () => {
+          voice?.cancel()
+          emit({ type: 'tts-flush' })
+          void jam.interrupt()
+        },
+        onAudio: (pcm, sampleRate) => emit({ type: 'tts-audio', pcm16Base64: pcm.toString('base64'), sampleRate }),
+        onError: (error) => emit({ type: 'status', agent: 'error', detail: `voice: ${error instanceof Error ? error.message : String(error)}` }),
+      },
+    )
+  }
+
+  ipcMain.handle(CHANNELS.say, (_e, text: string) => jam.say(text))
+  ipcMain.handle(CHANNELS.snapshot, (_e, windowSeconds?: number) => transcript.snapshot(now(), windowSeconds))
+  ipcMain.on(CHANNELS.midi, (_e, kind: 'on' | 'off', pitch: number, velocity: number) => {
+    if (kind === 'on') transcript.noteOn(pitch, now(), velocity, 'midi')
+    else transcript.noteOff(pitch, now(), 'midi')
+  })
+  ipcMain.on(CHANNELS.notes, (_e, notes: NoteEvent[]) => {
+    // The window has its own clock. A batch is sent the moment its last note
+    // ends, so shift it to end "now" on the session clock.
+    const end = Math.max(...notes.map((n) => n.start + n.duration))
+    const shift = now() - end
+    transcript.add(notes.map((n) => ({ ...n, start: n.start + shift })))
+  })
+  ipcMain.on(CHANNELS.micAudio, (_e, pcm: ArrayBuffer) => voice?.micAudio(pcm))
+  ipcMain.on(CHANNELS.interrupt, () => {
+    voice?.cancel()
+    emit({ type: 'tts-flush' })
+    emit({ type: 'stop-playback' })
+    void jam.interrupt()
+  })
+
+  // The window needs the mic, camera and MIDI devices; nothing else.
+  electronSession.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(['media', 'midi', 'midiSysex'].includes(permission))
+  })
+
+  window = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    title: 'Jamming Claude',
+    webPreferences: { preload: join(import.meta.dirname, '../preload/index.mjs'), sandbox: false },
+  })
+  window.webContents.on('did-finish-load', () => emit({ type: 'config', voice: voiceEnabled, missing }))
+  if (process.env.ELECTRON_RENDERER_URL) await window.loadURL(process.env.ELECTRON_RENDERER_URL)
+  else await window.loadFile(join(import.meta.dirname, '../renderer/index.html'))
+
+  if (process.env.ANTHROPIC_API_KEY) {
+    await jam.start()
+    await voice?.start().catch((error: unknown) => emit({ type: 'status', agent: 'error', detail: `voice: ${String(error)}` }))
+  }
+
+  app.on('window-all-closed', () => {
+    jam.stop()
+    voice?.stop()
+    app.quit()
+  })
+}
+
+void main()
