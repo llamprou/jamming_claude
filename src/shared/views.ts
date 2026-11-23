@@ -16,6 +16,7 @@ export const VIEWS: ViewSpec[] = [
   { kind: 'piano', description: 'notes lit on a piano keyboard' },
   { kind: 'guitar', description: 'notes on a guitar neck' },
   { kind: 'bass', description: 'notes on a bass neck' },
+  { kind: 'camera', description: 'the live camera picture with tracked hands; needs camera_on' },
 ]
 
 export const viewKinds = (): [string, ...string[]] => VIEWS.map((v) => v.kind) as [string, ...string[]]

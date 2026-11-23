@@ -7,3 +7,5 @@ dist/
 .DS_Store
 # runtime data written by the app in dev (taste memory, session transcripts)
 .jam-data/
+# downloaded by scripts/fetch-vision-assets.mjs (hand tracking model)
+assets/vision/
