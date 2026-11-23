@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import type { MainEvent } from '@shared/ipc'
 import { Transcript } from '@shared/music/transcript'
 import { JamSession } from '../src/main/agent/session'
+import { FeatureBus } from '../src/main/bus'
 import { TasteMemory } from '../src/main/memory/taste'
 
 /**
@@ -34,7 +35,7 @@ describe.skipIf(!process.env.JAM_LIVE)('live agent', () => {
       })
 
     const jam = new JamSession(
-      { transcript, memory, now: () => 6, emit: (e) => events.push(e), saveMidi: async (name) => `/tmp/${name}.mid` },
+      { transcript, memory, now: () => 6, emit: (e) => events.push(e), bus: new FeatureBus((e) => events.push(e)), saveMidi: async (name) => `/tmp/${name}.mid` },
       { model: process.env.JAM_AGENT_MODEL ?? 'claude-opus-5-5', voice: true, onSpeech: (chunk) => (spoken += chunk), onSpeechEnd: () => undefined },
     )
     await jam.start()

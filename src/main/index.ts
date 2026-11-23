@@ -6,6 +6,7 @@ import { CHANNELS, type MainEvent } from '@shared/ipc'
 import { Transcript } from '@shared/music/transcript'
 import type { NoteEvent } from '@shared/music/types'
 import { JamSession } from './agent/session'
+import { FeatureBus } from './bus'
 import { TasteMemory } from './memory/taste'
 import { Voice } from './voice/voice'
 
@@ -32,6 +33,7 @@ async function main(): Promise<void> {
   const startedAt = performance.now()
   const now = () => (performance.now() - startedAt) / 1000
   const transcript = new Transcript()
+  const bus = new FeatureBus(emit)
   const memory = new TasteMemory(process.env.JAM_DATA_DIR ?? join(app.getPath('userData'), 'taste'))
 
   const missing = ['ANTHROPIC_API_KEY', 'DEEPGRAM_API_KEY', 'CARTESIA_API_KEY', 'JAM_TTS_VOICE_ID'].filter((name) => !process.env[name])
@@ -44,6 +46,7 @@ async function main(): Promise<void> {
       memory,
       now,
       emit,
+      bus,
       saveMidi: async (name, midi) => {
         const dir = process.env.JAM_DATA_DIR ? join(process.env.JAM_DATA_DIR, 'ideas') : join(app.getPath('music'), 'Jamming Claude')
         await mkdir(dir, { recursive: true })
@@ -93,6 +96,8 @@ async function main(): Promise<void> {
     else transcript.noteOff(pitch, now(), 'midi')
   })
   ipcMain.handle(CHANNELS.clock, () => now())
+  ipcMain.on(CHANNELS.feature, (_e, feature: string, message: unknown) => bus.deliver(feature, message))
+  ipcMain.on(CHANNELS.featureReply, (_e, id: number, result: unknown, error?: string) => bus.settle(id, result, error))
   ipcMain.on(CHANNELS.notes, (_e, notes: NoteEvent[]) => transcript.add(notes))
   ipcMain.on(CHANNELS.revise, (_e, from: number, to: number, notes: NoteEvent[]) => transcript.revise(from, to, 'audio', notes))
   ipcMain.on(CHANNELS.micAudio, (_e, pcm: ArrayBuffer) => voice?.micAudio(pcm))

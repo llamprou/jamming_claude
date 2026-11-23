@@ -1,10 +1,11 @@
-import abcjs from 'abcjs'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MainEvent } from '@shared/ipc'
-import { detectChords } from '@shared/music/analysis'
-import { chordPitches, diagramSvg, tabToAscii, toAbc, toTab } from '@shared/music/render'
-import type { Instrument, NoteEvent, Snapshot, ViewKind } from '@shared/music/types'
-import { flushVoice, playClip, playVoiceChunk, startMic, startMidi, stopClip } from './audio'
+import type { Snapshot } from '@shared/music/types'
+import { flushVoice, playClip, playVoiceChunk, sessionNow, setClockOffset, startMic, startMidi, stopClip } from './audio'
+import { routeFeatureEvent } from './features/bus'
+import { startFeatures } from './features'
+import './views'
+import { viewFor, type Panel } from './views/registry'
 
 /**
  * Voice-first: there are no controls. The mic and MIDI start on their own, the
@@ -13,18 +14,7 @@ import { flushVoice, playClip, playVoiceChunk, startMic, startMidi, stopClip } f
  * and whatever views the agent has opened.
  */
 
-interface Panel {
-  view: ViewKind
-  title?: string
-  instrument?: Instrument
-  /** Absent means "follow the live input". */
-  notes?: NoteEvent[]
-  chords?: string[]
-}
-
 type AgentState = 'idle' | 'thinking' | 'speaking' | 'error'
-
-const clock = () => performance.now() / 1000
 
 export function App() {
   const [agent, setAgent] = useState<{ state: AgentState; detail?: string }>({ state: 'idle' })
@@ -42,6 +32,7 @@ export function App() {
 
   useEffect(() => {
     return window.jam.onEvent((event: MainEvent) => {
+      routeFeatureEvent(event)
       switch (event.type) {
         case 'status':
           return setAgent({ state: event.agent, detail: event.detail })
@@ -76,7 +67,8 @@ export function App() {
     let cancelled = false
     let stopMic = () => {}
     void (async () => {
-      const offset = (await window.jam.clock()) - clock()
+      setClockOffset((await window.jam.clock()) - performance.now() / 1000)
+      if (!cancelled) startFeatures()
       try {
         const mic = await startMic({
           onSpeechPcm: window.jam.micAudio,
@@ -84,7 +76,7 @@ export function App() {
           onCorrection: (c) => window.jam.revise(c.from, c.to, c.notes),
           onEngine: setEngine,
           onLevel: (level) => orb.current?.style.setProperty('--level', level.toFixed(2)),
-          now: () => clock() + offset,
+          now: sessionNow,
         })
         if (cancelled) return mic.stop()
         stopMic = mic.stop
@@ -94,7 +86,7 @@ export function App() {
       }
     })()
     void startMidi(
-      (kind, pitch, velocity) => window.jam.midi(kind, pitch, velocity, clock()),
+      (kind, pitch, velocity) => window.jam.midi(kind, pitch, velocity, sessionNow()),
       (names) => setInputs((i) => ({ ...i, midi: names.join(', ') || 'none connected' })),
     ).catch(() => setInputs((i) => ({ ...i, midi: 'unavailable' })))
     return () => {
@@ -125,7 +117,7 @@ export function App() {
         {panels.map((panel) => (
           <section key={panel.view} className="panel">
             <h2>{panel.title ?? (panel.notes || panel.chords ? panel.view : `${panel.view} · live`)}</h2>
-            <PanelView panel={panel} snapshot={snapshot} />
+            <PanelBody panel={panel} snapshot={snapshot} />
           </section>
         ))}
       </main>
@@ -164,55 +156,7 @@ export function App() {
   )
 }
 
-function PanelView({ panel, snapshot }: { panel: Panel; snapshot: Snapshot | null }) {
-  const live = !panel.notes && !panel.chords
-  const notes = panel.notes ?? snapshot?.notes ?? []
-  const chords = panel.chords ?? (panel.notes ? detectChords(panel.notes).map((c) => c.symbol) : (snapshot?.chords.map((c) => c.symbol) ?? []))
-  const sounding = useMemo(() => {
-    if (panel.chords?.length) return chordPitches(panel.chords[panel.chords.length - 1]!)
-    const end = Math.max(0, ...notes.map((n) => n.start + n.duration))
-    return notes.filter((n) => n.start + n.duration >= end - 0.25).map((n) => n.pitch)
-  }, [notes, panel.chords])
-  const sheet = useRef<HTMLDivElement>(null)
-  const bpm = live ? (snapshot?.rhythm?.bpm ?? 120) : 120
-  const key = live && snapshot?.key ? `${snapshot.key.tonic}${snapshot.key.mode === 'minor' ? 'm' : ''}` : 'C'
-
-  useEffect(() => {
-    if (panel.view !== 'sheet' || !sheet.current) return
-    abcjs.renderAbc(sheet.current, toAbc(notes.slice(-64), { bpm, key }), { responsive: 'resize' })
-  }, [panel.view, notes, bpm, key])
-
-  switch (panel.view) {
-    case 'chords':
-      return (
-        <div className="chords">
-          {chords.length === 0 && <span className="quiet">Listening…</span>}
-          {chords.slice(-8).map((c, i, all) => (
-            <span key={i} className={i === all.length - 1 ? 'now' : ''}>
-              {c}
-            </span>
-          ))}
-        </div>
-      )
-    case 'rhythm': {
-      const pattern = snapshot?.rhythm?.pattern ?? '................'
-      return (
-        <div className="grid" role="img" aria-label={`Rhythm ${pattern}`}>
-          {[...pattern].map((c, i) => (
-            <span key={i} className={c === 'x' ? 'on' : ''} />
-          ))}
-        </div>
-      )
-    }
-    case 'sheet':
-      return <div className="sheet" ref={sheet} />
-    case 'tab': {
-      const instrument = panel.instrument === 'bass' ? 'bass' : 'guitar'
-      return <pre className="tab">{tabToAscii(toTab(notes.slice(-48), instrument), instrument)}</pre>
-    }
-    case 'piano':
-    case 'guitar':
-    case 'bass':
-      return <div className="diagram" dangerouslySetInnerHTML={{ __html: diagramSvg(sounding, panel.view) }} />
-  }
+function PanelBody({ panel, snapshot }: { panel: Panel; snapshot: Snapshot | null }) {
+  const View = viewFor(panel.view)
+  return View ? <View panel={panel} snapshot={snapshot} /> : <p className="quiet">This build has no "{panel.view}" view.</p>
 }

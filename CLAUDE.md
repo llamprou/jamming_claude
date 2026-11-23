@@ -11,13 +11,29 @@ Design stance: the agent is the product. Code here is a library of fast, dependa
   - `analysis.ts` chords, key, tempo/groove. `pitch.ts` fast monophonic pitch (YIN).
   - `polyphonic.ts` the slow pass's model (Spotify Basic Pitch on tfjs) plus ghost-note cleanup. `slowpass.ts` audio ring buffer, resampler, and the scheduler that decides which stretch each model run may overwrite.
   - `render.ts` tab, ABC (sheet), piano/fretboard SVG, chord voicing. `clip.ts` playable clips and MIDI files.
+- `src/shared/views.ts` the list of views the agent can open. `src/shared/ipc.ts` the typed core contract between main and window. `src/shared/features/<name>.ts` message types for one feature's bus traffic.
 - `src/main/` Electron main process.
   - `agent/session.ts` the live agent: one long-running Claude Agent SDK `query()` with streaming input. It has only the jam tools, no file or shell tools. Also hosts `extend`, the separate coding session.
-  - `agent/tools.ts` the jam tools (in-process MCP server). `agent/prompt.ts` system prompts.
+  - `agent/toolkit.ts` `ToolContext`, `ToolModule`, shared schemas. `agent/tools/` one file per tool module; `agent/tools/index.ts` lists them. `agent/prompt.ts` the system prompt frame (tool guidance comes from the modules).
+  - `bus.ts` the feature bus: `send`, `request` (awaits the window's answer), `on`.
   - `memory/taste.ts` taste memory: `events.jsonl` (reactions) and `profile.md` (distilled, loaded into the system prompt).
   - `voice/voice.ts` Deepgram Flux (speech-to-text and turn detection) and Cartesia Sonic (text-to-speech).
-- `src/renderer/` React UI. `audio.ts` owns the single AudioContext: mic capture, clip playback, voice playback, Web MIDI. `transcriber.worker.ts` runs the polyphonic model off the UI thread; `tap.worklet.js` taps mic samples on the audio thread.
-- `src/shared/ipc.ts` the typed contract between main and renderer.
+- `src/renderer/src/` the window (React).
+  - `audio/context.ts` the single AudioContext, `musicOutput()`, the session clock (`sessionNow`, `toAudioTime`) and `onMicBlock` for raw mic samples. `audio/voices.ts` the voice registry and built-in synth. `audio/player.ts` one-shot clip playback. `audio/mic.ts` mic capture and both transcription passes. `audio/speech.ts` the buddy's voice. `audio/midi.ts` Web MIDI. `audio.ts` re-exports them.
+  - `views/registry.ts` `registerView`; `views/core.tsx` the original seven; `views/index.ts` lists view modules.
+  - `features/bus.ts` the window end of the feature bus; `features/index.ts` lists window features.
+  - `transcriber.worker.ts` runs the polyphonic model off the UI thread; `tap.worklet.js` taps mic samples on the audio thread.
+
+## Adding a capability without touching the others
+
+Each capability is a module that plugs into registries. Existing modules are not edited to add a new one; the only shared edits are one-line entries in the lists named below.
+
+- **Music logic**: a new file (or folder) in `src/shared/music/`, pure functions, with its own test file. Do not grow `analysis.ts` or `render.ts`; import from them.
+- **Agent tools**: a new file in `src/main/agent/tools/` exporting a `ToolModuleFactory` (tools plus the `guide` paragraph that tells the agent when to use them), and one line in `tools/index.ts`. Tool names must be unique across modules.
+- **A view**: a component registered with `registerView(kind, Component)` in a new file under `views/`, one import line in `views/index.ts`, and one entry in `src/shared/views.ts`. Registering an existing kind replaces its renderer; do that deliberately, in the module that supersedes it. Extra payload travels in `Panel.data`.
+- **Window-side behaviour** (camera, looping, sampling): a folder under `features/` exporting `start()`, one line in `features/index.ts`. Talk to main over the feature bus under your feature's own name, with message types in `src/shared/features/<name>.ts`. Do not add cases to `MainEvent` or methods to `RendererApi` for a feature.
+- **Sound**: a new instrument registers a chooser with `registerVoice`; it returns null for tracks it does not handle. Play through `musicOutput()`. Mic samples come from `onMicBlock`; never call `getUserMedia` for audio again.
+- **Time**: everything is stamped on the session clock (`ctx.now()` in main, `sessionNow()` in the window). Use `toAudioTime` to schedule sound.
 
 ## Commands
 

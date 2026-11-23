@@ -64,7 +64,8 @@ export interface ClipTrack {
 
 export type Instrument = 'piano' | 'guitar' | 'bass'
 
-export type ViewKind = 'chords' | 'rhythm' | 'sheet' | 'tab' | 'piano' | 'guitar' | 'bass'
+/** One of the kinds listed in src/shared/views.ts. */
+export type ViewKind = string
 
 export interface Snapshot {
   windowSeconds: number

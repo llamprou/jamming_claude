@@ -1,7 +1,8 @@
 import { query, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { MainEvent } from '@shared/ipc'
 import { EXTENDER_PROMPT, systemPrompt } from './prompt'
-import { TOOL_NAMES, createJamTools, type ToolContext } from './tools'
+import type { ToolContext } from './toolkit'
+import { buildToolbox } from './tools'
 
 export interface SessionOptions {
   model: string
@@ -58,17 +59,17 @@ export class JamSession {
   async start(): Promise<void> {
     const tasteProfile = await this.ctx.memory.profile()
     const canExtend = Boolean(this.opts.sourceDir)
-    const jam = createJamTools({ ...this.ctx, extend: canExtend ? (request) => this.extend(request) : undefined })
+    const toolbox = buildToolbox({ ...this.ctx, extend: canExtend ? (request) => this.extend(request) : undefined })
 
     this.run = query({
       prompt: this.inbox,
       options: {
         model: this.opts.model,
         effort: 'low', // conversational latency matters more than depth here
-        systemPrompt: systemPrompt({ tasteProfile, voice: this.opts.voice, canExtend }),
-        mcpServers: { jam },
+        systemPrompt: systemPrompt({ tasteProfile, voice: this.opts.voice, toolGuide: toolbox.guide }),
+        mcpServers: { jam: toolbox.server },
         tools: [], // no built-in tools in the live loop
-        allowedTools: TOOL_NAMES.map((name) => `mcp__jam__${name}`),
+        allowedTools: toolbox.allowedTools,
         permissionMode: 'dontAsk',
         settingSources: [],
         includePartialMessages: true,

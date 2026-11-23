@@ -15,6 +15,8 @@ const api: RendererApi = {
   micAudio: (pcm16) => ipcRenderer.send(CHANNELS.micAudio, pcm16),
   snapshot: (windowSeconds) => ipcRenderer.invoke(CHANNELS.snapshot, windowSeconds),
   interrupt: () => ipcRenderer.send(CHANNELS.interrupt),
+  feature: (feature, message) => ipcRenderer.send(CHANNELS.feature, feature, message),
+  featureReply: (id, result, error) => ipcRenderer.send(CHANNELS.featureReply, id, result, error),
 }
 
 contextBridge.exposeInMainWorld('jam', api)

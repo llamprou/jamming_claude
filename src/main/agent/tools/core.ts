@@ -1,24 +1,11 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
+import { tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import { noteName } from '@shared/music/analysis'
 import { clipLengthBeats, clipToMidi, clipToNotes, progressionTrack } from '@shared/music/clip'
 import { chordPitches, chordsToText, rhythmToText } from '@shared/music/render'
-import type { Transcript } from '@shared/music/transcript'
 import type { Clip, NoteEvent, Snapshot } from '@shared/music/types'
-import type { MainEvent } from '@shared/ipc'
-import type { TasteMemory } from '../memory/taste'
-
-export interface ToolContext {
-  transcript: Transcript
-  memory: TasteMemory
-  /** Seconds on the session clock. */
-  now(): number
-  emit(event: MainEvent): void
-  /** Save a generated MIDI file where the player can find it; returns its path. */
-  saveMidi(name: string, midi: Uint8Array): Promise<string>
-  /** Present only when self-extension is enabled (running from a source checkout). */
-  extend?: (request: string) => Promise<string>
-}
+import { VIEWS, viewKinds } from '@shared/views'
+import { noteSchema, text, trackSchema, type ToolModuleFactory } from '../toolkit'
 
 /** Tell the model how far to trust what it is about to read. */
 function describeAccuracy(snap: Snapshot): string {
@@ -28,24 +15,8 @@ function describeAccuracy(snap: Snapshot): string {
   return `audio, corrected by the polyphonic pass except the most recent ${lag.toFixed(0)}s, which are single-note guesses`
 }
 
-const text = (value: string) => ({ content: [{ type: 'text' as const, text: value }] })
-
-const noteSchema = z.object({
-  pitch: z.number().int().min(0).max(127).describe('MIDI note number; 60 is middle C'),
-  startBeat: z.number().min(0),
-  durationBeats: z.number().positive(),
-  velocity: z.number().min(0).max(1).default(0.8),
-})
-
-const trackSchema = z.object({
-  role: z.enum(['chords', 'melody', 'bass', 'drums', 'solo']),
-  program: z.number().int().min(0).max(127).default(0).describe('General MIDI program; 0 piano, 24 nylon guitar, 32 acoustic bass'),
-  notes: z.array(noteSchema),
-})
-
-export const TOOL_NAMES = ['listen', 'show', 'hide', 'play', 'stop', 'remember', 'recall', 'update_taste_profile', 'extend_self'] as const
-
-export function createJamTools(ctx: ToolContext) {
+/** Hearing, the screen, and playback: the tools every session has. */
+export const core: ToolModuleFactory = (ctx) => {
   const listen = tool(
     'listen',
     'Get what the player has been playing recently: chords, key, tempo and groove, and the notes themselves.',
@@ -78,7 +49,7 @@ export function createJamTools(ctx: ToolContext) {
     'show',
     "Open a view on the player's screen (several can be open at once; showing a view that is already open updates it). Without `chords` or `notes`, it follows what the player is playing, live.",
     {
-      view: z.enum(['chords', 'rhythm', 'sheet', 'tab', 'piano', 'guitar', 'bass']),
+      view: z.enum(viewKinds()),
       title: z.string().optional(),
       chords: z.array(z.string()).optional().describe('Chord symbols to show instead of the live input, e.g. ["Dm7","G7","Cmaj7"]'),
       notes: z.array(noteSchema).optional().describe('Notes to show instead of the live input (beats at 120 bpm)'),
@@ -128,7 +99,7 @@ export function createJamTools(ctx: ToolContext) {
   const hide = tool(
     'hide',
     "Close a view on the player's screen, or all of them.",
-    { view: z.enum(['chords', 'rhythm', 'sheet', 'tab', 'piano', 'guitar', 'bass', 'all']) },
+    { view: z.enum([...viewKinds(), 'all']) },
     async ({ view }) => {
       ctx.emit({ type: 'hide-view', view })
       return text(view === 'all' ? 'Screen cleared.' : `Closed ${view}.`)
@@ -140,60 +111,12 @@ export function createJamTools(ctx: ToolContext) {
     return text('Stopped.')
   })
 
-  const remember = tool(
-    'remember',
-    "Record a reaction that reveals the player's taste, so future ideas fit them better.",
-    {
-      reaction: z.enum(['loved', 'liked', 'kept', 'neutral', 'disliked', 'skipped']),
-      subject: z.string().describe('What they reacted to, in musical terms specific enough to act on later'),
-      evidence: z.string().optional().describe('What they said or did'),
-      tags: z.array(z.string()).optional().describe('e.g. genre, feel, harmony, tempo'),
-    },
-    async (event) => {
-      await ctx.memory.record(event)
-      const pending = await ctx.memory.undistilledCount()
-      return text(pending >= 8 ? `Noted. ${pending} reactions since the profile was last updated: worth rewriting it soon.` : 'Noted.')
-    },
-  )
-
-  const recall = tool(
-    'recall',
-    "Look up the player's recorded reactions.",
-    { limit: z.number().int().min(1).max(200).default(30), tag: z.string().optional() },
-    async ({ limit, tag }) => {
-      const events = await ctx.memory.events(limit, tag)
-      if (events.length === 0) return text('No reactions recorded yet.')
-      return text(
-        events
-          .map((e) => `${e.at.slice(0, 10)} ${e.reaction}: ${e.subject}${e.evidence ? ` ("${e.evidence}")` : ''}${e.tags?.length ? ` [${e.tags.join(', ')}]` : ''}`)
-          .join('\n'),
-      )
-    },
-  )
-
-  const updateProfile = tool(
-    'update_taste_profile',
-    "Rewrite the player's taste profile (markdown). It is loaded at the start of every session, so keep it concise, concrete and current: what they gravitate to, what they avoid, and how sure you are.",
-    { markdown: z.string().min(20) },
-    async ({ markdown }) => {
-      await ctx.memory.writeProfile(markdown)
-      return text('Taste profile updated.')
-    },
-  )
-
-  const tools = [listen, show, hide, play, stop, remember, recall, updateProfile]
-
-  if (ctx.extend) {
-    const extend = ctx.extend
-    tools.push(
-      tool(
-        'extend_self',
-        "Ask a Claude Code session to add a capability to this app's own source code. It works in the background on a separate git branch and reports back; the player reviews the change before it is used.",
-        { request: z.string().describe('What to build and why, including what the player asked for in their own words') },
-        async ({ request }) => text(await extend(request)),
-      ) as never,
-    )
+  return {
+    name: 'core',
+    guide: `- listen: what they've been playing just now (chords, key, tempo and groove, notes). Call it before you comment on or build from their playing; don't guess what you heard. For audio input the result says how recent the corrected transcription is.
+- show / hide: you run the screen. The player has no buttons or menus and is not typing; their hands are on an instrument. When they ask to see something, open it with show; when they ask you to close something or clear the screen, use hide. Open a view on your own whenever seeing would help, and close ones that are no longer relevant so the screen stays uncluttered. Showing is much faster than describing. Views: ${VIEWS.map((v) => `${v.kind} (${v.description})`).join('; ')}.
+- play: play a musical idea through the speakers: a progression, a melody, a bass line, a groove, a solo. This is how you jam. When they ask for an idea, play it rather than describing it, and say a few words while it starts. Each idea is also saved as a MIDI file; mention where only if they ask.
+- stop: stop your playback.`,
+    tools: [listen, show, hide, play, stop],
   }
-
-  return createSdkMcpServer({ name: 'jam', version: '0.1.0', tools })
 }
