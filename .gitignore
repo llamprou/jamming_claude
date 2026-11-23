@@ -7,3 +7,5 @@ dist/
 .DS_Store
 # runtime data written by the app in dev (taste memory, session transcripts)
 .jam-data/
+# working copies used by parallel coding agents
+.claude/worktrees/
