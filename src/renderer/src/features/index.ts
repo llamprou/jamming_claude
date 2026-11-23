@@ -6,7 +6,9 @@
  */
 import { start as sampler } from './sampler'
 
-const features: Array<() => void | Promise<void>> = [sampler]
+const features: Array<() => void | Promise<void>> = [
+  sampler,
+]
 
 export function startFeatures(): void {
   for (const start of features) void Promise.resolve().then(start).catch((error) => console.error('feature failed to start', error))
