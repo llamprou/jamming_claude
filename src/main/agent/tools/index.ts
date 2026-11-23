@@ -1,5 +1,6 @@
 import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk'
 import type { ToolContext, ToolModuleFactory } from '../toolkit'
+import { arrange } from './arrange'
 import { core } from './core'
 import { extend } from './extend'
 import { memory } from './memory'
@@ -9,7 +10,7 @@ import { memory } from './memory'
  * system prompt. To add a capability: write a module in this folder and add
  * one line here.
  */
-export const MODULES: ToolModuleFactory[] = [core, memory, extend]
+export const MODULES: ToolModuleFactory[] = [core, arrange, memory, extend]
 
 export function buildToolbox(ctx: ToolContext, factories: ToolModuleFactory[] = MODULES) {
   const modules = factories.flatMap((factory) => factory(ctx) ?? [])
