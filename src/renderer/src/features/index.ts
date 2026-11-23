@@ -9,8 +9,13 @@ import { start as sampler } from './sampler'
 import { start as transport } from './transport'
 import { start as whiteboard } from './whiteboard'
 import { start as notation } from './notation'
+import { start as log } from './log'
+import { log as windowLog } from '../log'
+
+const logError = windowLog.error
 
 const features: Array<() => void | Promise<void>> = [
+  log,
   sampler,
   transport,
   camera,
@@ -19,5 +24,11 @@ const features: Array<() => void | Promise<void>> = [
 ]
 
 export function startFeatures(): void {
-  for (const start of features) void Promise.resolve().then(start).catch((error) => console.error('feature failed to start', error))
+  for (const start of features)
+    void Promise.resolve()
+      .then(start)
+      .catch((error) => {
+        console.error('feature failed to start', error)
+        logError('window', `feature ${start.name || '?'} failed to start`, error)
+      })
 }

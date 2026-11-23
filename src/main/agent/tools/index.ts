@@ -4,6 +4,7 @@ import { arrange } from './arrange'
 import { core } from './core'
 import { extend } from './extend'
 import { instruments } from './instruments'
+import { logs } from './logs'
 import { memory } from './memory'
 import { notation } from './notation'
 import { transport } from './transport'
@@ -24,6 +25,7 @@ export const MODULES: ToolModuleFactory[] = [
   vision,
   whiteboard,
   memory,
+  logs,
   extend,
 ]
 

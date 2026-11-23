@@ -1,3 +1,4 @@
+import { maxPolyphony as polyphony } from '../log'
 import { MODEL_SAMPLE_RATE, type RawNote } from './polyphonic'
 import type { NoteEvent } from './types'
 
@@ -58,6 +59,10 @@ export class AudioRing {
     return this.endTime - Math.min(this.written, this.buffer.length) / this.sampleRate
   }
 
+  get rate(): number {
+    return this.sampleRate
+  }
+
   /** Samples covering [from, to), clamped to what is still held. */
   slice(from: number, to: number): { audio: Float32Array; from: number } {
     const clampedFrom = Math.max(from, this.start)
@@ -68,6 +73,8 @@ export class AudioRing {
     return { audio, from: clampedFrom }
   }
 }
+
+class RunTimeout extends Error {}
 
 export interface Correction {
   from: number
@@ -96,7 +103,18 @@ export interface SlowPassOptions {
   retrySeconds?: number
   /** Called when a run times out, so the owner can restart a stuck model. */
   onTimeout?(): void
+  /** What each run did, for the diagnostic log. */
+  onEvent?(event: SlowPassEvent): void
 }
+
+/** One thing the slow pass did. Times are session seconds; `ms` is wall-clock run time. */
+export type SlowPassEvent =
+  | { type: 'run'; from: number; to: number; windowSeconds: number; rms: number; timeoutSeconds: number }
+  | { type: 'silent'; from: number; to: number; rms: number }
+  | { type: 'done'; from: number; to: number; ms: number; rawNotes: number; notes: number; polyphony: number }
+  | { type: 'failed'; from: number; to: number; ms: number; error: string; stack?: string; timedOut: boolean; failures: number }
+  | { type: 'skipped-ahead'; lostSeconds: number }
+  | { type: 'state'; from: SlowPassStatus['state']; to: SlowPassStatus['state'] }
 
 /** What the slow pass is doing, for `listen` to tell the player. Times are session seconds. */
 export interface SlowPassStatus {
@@ -193,24 +211,35 @@ export class SlowPass {
     this.committedUntil = Math.max(this.committedUntil, this.ring.start)
     const to = now - this.margin
     if (to - this.committedUntil < this.hop) return false
+    const behind = this.committedUntil
     this.committedUntil = Math.max(this.committedUntil, to - this.maxStretch)
+    if (this.committedUntil - behind > 0.01) this.options.onEvent?.({ type: 'skipped-ahead', lostSeconds: this.committedUntil - behind })
     void this.run(this.committedUntil, to, now)
     return true
   }
 
   private async run(from: number, to: number, now: number): Promise<void> {
     this.busy = true
+    const before = this.status().state
+    const emit = this.options.onEvent
+    let started = Date.now()
     try {
       const window = this.ring.slice(from - this.context, now)
       let notes: NoteEvent[] = []
-      if (rms(window.audio) >= this.silenceRms) {
-        const started = Date.now()
-        const raw = await this.withTimeout(this.transcribe(window.audio), this.runs === 0 ? this.firstRunTimeout : this.runTimeout)
+      const level = rms(window.audio)
+      if (level >= this.silenceRms) {
+        const timeout = this.runs === 0 ? this.firstRunTimeout : this.runTimeout
+        emit?.({ type: 'run', from, to, windowSeconds: window.audio.length / this.ring.rate, rms: level, timeoutSeconds: timeout })
+        started = Date.now()
+        const raw = await this.withTimeout(this.transcribe(window.audio), timeout)
         this.lastRunMs = Date.now() - started
         notes = raw
           .map((n) => ({ ...n, start: n.start + window.from }))
           .filter((n) => n.start >= from && n.start < to)
           .map((n) => ({ pitch: n.pitch, start: n.start, duration: n.duration, velocity: Math.min(1, n.amplitude), source: 'audio' as const, confidence: Math.min(1, n.amplitude) }))
+        emit?.({ type: 'done', from, to, ms: this.lastRunMs, rawNotes: raw.length, notes: notes.length, polyphony: polyphony(notes) })
+      } else {
+        emit?.({ type: 'silent', from, to, rms: level })
       }
       this.committedUntil = to
       this.corrected = to
@@ -223,8 +252,20 @@ export class SlowPass {
       this.failures += 1
       this.lastError = error instanceof Error ? error.message : String(error)
       this.retryAt = this.ring.end + this.retry
+      emit?.({
+        type: 'failed',
+        from,
+        to,
+        ms: Date.now() - started,
+        error: this.lastError,
+        stack: error instanceof Error ? error.stack?.split('\n').slice(0, 8).join('\n') : undefined,
+        timedOut: error instanceof RunTimeout,
+        failures: this.failures,
+      })
     } finally {
       this.busy = false
+      const after = this.status().state
+      if (after !== before) emit?.({ type: 'state', from: before, to: after })
     }
   }
 
@@ -233,7 +274,7 @@ export class SlowPass {
       // If the stuck run answers later, its result is ignored: this promise has already settled.
       const timer = setTimeout(() => {
         this.options.onTimeout?.()
-        reject(new Error(`the model did not answer within ${seconds} s`))
+        reject(new RunTimeout(`the model did not answer within ${seconds} s`))
       }, seconds * 1000)
       work.then(
         (value) => (clearTimeout(timer), resolve(value)),

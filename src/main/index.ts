@@ -3,12 +3,14 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { BrowserWindow, app, ipcMain, session as electronSession } from 'electron'
 import { CHANNELS, type MainEvent } from '@shared/ipc'
+import { LEVELS, LOG_FEATURE, type LogEntry } from '@shared/log'
 import { Transcript } from '@shared/music/transcript'
 import type { NoteEvent } from '@shared/music/types'
 import { JamSession } from './agent/session'
 import { FeatureBus } from './bus'
 import { Playback } from './playback'
 import { TasteMemory } from './memory/taste'
+import { catchProcessErrors, jamLog } from './log'
 import { Voice } from './voice/voice'
 
 /** Minimal .env loader for development; real environment variables win. */
@@ -26,15 +28,25 @@ const emit = (event: MainEvent) => window?.webContents.send(CHANNELS.event, even
 
 // The app talks and plays as soon as it opens; no click should be needed to unlock audio.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+catchProcessErrors()
 
 async function main(): Promise<void> {
   await app.whenReady()
   loadDotEnv()
+  // ~/Library/Logs/Jamming Claude on macOS.
+  jamLog.open(process.env.JAM_LOG_DIR ?? (process.env.JAM_DATA_DIR ? join(process.env.JAM_DATA_DIR, 'logs') : app.getPath('logs')))
+  jamLog.info('main', 'app started', { version: app.getVersion(), electron: process.versions.electron, platform: process.platform, arch: process.arch, packaged: app.isPackaged })
+  app.on('child-process-gone', (_e, details) => jamLog.error('main', `${details.type} process gone: ${details.reason}`, undefined, { exitCode: details.exitCode, name: details.name }))
 
   const startedAt = performance.now()
   const now = () => (performance.now() - startedAt) / 1000
   const transcript = new Transcript()
   const bus = new FeatureBus(emit)
+  // The window and its workers log through main so everything lands in one file.
+  bus.on(LOG_FEATURE, (message) => {
+    const e = message as LogEntry
+    if (e && typeof e.message === 'string' && LEVELS.includes(e.level)) jamLog.write({ ...e, component: String(e.component || 'window') })
+  })
   const playback = new Playback(emit)
   const memory = new TasteMemory(process.env.JAM_DATA_DIR ?? join(app.getPath('userData'), 'taste'))
 
@@ -124,6 +136,9 @@ async function main(): Promise<void> {
     webPreferences: { backgroundThrottling: false, preload: join(import.meta.dirname, '../preload/index.mjs'), sandbox: false },
   })
   window.webContents.on('did-finish-load', () => emit({ type: 'config', voice: voiceEnabled, missing }))
+  window.webContents.on('render-process-gone', (_e, details) => jamLog.error('main', `window process gone: ${details.reason}`, undefined, { exitCode: details.exitCode }))
+  window.webContents.on('unresponsive', () => jamLog.warn('main', 'window unresponsive'))
+  window.webContents.on('responsive', () => jamLog.info('main', 'window responsive again'))
   if (process.env.ELECTRON_RENDERER_URL) await window.loadURL(process.env.ELECTRON_RENDERER_URL)
   else await window.loadFile(join(import.meta.dirname, '../renderer/index.html'))
 
