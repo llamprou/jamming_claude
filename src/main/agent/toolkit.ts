@@ -2,6 +2,7 @@ import type { tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import type { MainEvent } from '@shared/ipc'
 import type { Transcript } from '@shared/music/transcript'
+import type { ScreenCapturer } from '@shared/screen'
 import type { FeatureBus } from '../bus'
 import type { Playback } from '../playback'
 import type { TasteMemory } from '../memory/taste'
@@ -28,6 +29,8 @@ export interface ToolContext {
    * speaking (they pressed Done on the whiteboard). Absent in tests.
    */
   notify?: (note: string) => void
+  /** Screenshots of the app window or the screen, taken only when a tool asks. Absent in tests and where capture is unavailable. */
+  screen?: ScreenCapturer
   /** Present only when self-extension is enabled (running from a source checkout). */
   extend?: (request: string) => Promise<string>
 }

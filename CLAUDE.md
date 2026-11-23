@@ -18,6 +18,7 @@ Design stance: the agent is the product. Code here is a library of fast, dependa
   - `sounding.ts` which pitches sound at a moment: the log of played notes and stepping through timed notes, for the animated instrument views.
   - `vision/` hand landmarks to musical signals: fret-region and keyboard-hand hints, gestures.
 - `src/shared/whiteboard.ts` the on-demand whiteboard's strokes, text and undo (pure). The window keeps the board in `features/whiteboard/`, draws it in `views/whiteboard.tsx`, and `agent/tools/whiteboard.ts` reads it back as text plus a PNG.
+- `src/shared/screen.ts` screenshot sizing, the short snapshot buffer and the macOS permission wording (pure). `src/main/screen/capture.ts` takes the stills with Electron (app window, or the display via `desktopCapturer`) and reaches tools as `ctx.screen`; `agent/tools/screen.ts` is `look_screen` / `watch_screen`; `features/screen/` shows the capture light.
 - `src/shared/views.ts` the list of views the agent can open. `src/shared/ipc.ts` the typed core contract between main and window. `src/shared/features/<name>.ts` message types for one feature's bus traffic.
 - `src/main/` Electron main process.
   - `agent/session.ts` the live agent: one long-running Claude Agent SDK `query()` with streaming input. It has only the jam tools, no file or shell tools. Also hosts `extend`, the separate coding session.
