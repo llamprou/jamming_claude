@@ -3,22 +3,27 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
+import { NOTATION, type NotationRequest, type NotationShown } from '@shared/features/notation'
 import {
-  chordsAsNotes,
+  barsToShow,
+  describeWritten,
+  givenMusic,
   keySegments,
   parseKey,
   rhythmGrid,
   rhythmGridToText,
   scoreToAbc,
   scoreToMusicXml,
+  summariseScore,
   tabToText,
   TAB_TUNINGS,
   transcribe,
   transcribeTab,
+  type GivenMusic,
   type NotationOptions,
   type Transcription,
 } from '@shared/music/notation'
-import type { ChordSpan, NoteEvent } from '@shared/music/types'
+import type { NoteEvent } from '@shared/music/types'
 import { noteSchema, text, type ToolModuleFactory } from '../toolkit'
 
 const tunings = Object.keys(TAB_TUNINGS) as [string, ...string[]]
@@ -32,9 +37,9 @@ const optionSchema = {
   capo: z.number().int().min(0).max(12).optional().describe('Tab: capo fret'),
   tuning: z.enum(tunings).optional().describe('Tab: string tuning. Standard for the instrument if absent'),
   hand_fret: z.number().int().min(0).max(19).optional().describe('Tab: fret the fretting hand is at, if known; positions near it are chosen'),
-  bars: z.number().int().min(1).max(32).optional().describe('How many bars, counting back from the latest'),
+  bars: z.number().int().min(1).max(64).optional().describe('Keep only this many bars, counting back from the latest. Live playing shows 8 unless set; given notes or chords show every bar unless set'),
   notes: z.array(noteSchema).optional().describe('Notes to write instead of the live playing (beats at 120 bpm, bar line at beat 0)'),
-  chords: z.array(z.string()).optional().describe('Chord symbols to write instead, one bar each'),
+  chords: z.array(z.string()).optional().describe('Chord symbols, one bar each, written exactly as given. Alone they are voiced and written out; with `notes` they label the notes'),
 }
 type Asked = z.infer<z.ZodObject<typeof optionSchema>>
 
@@ -59,14 +64,10 @@ const sureness = (confidence: number): string => (confidence >= 0.7 ? 'clear' : 
 /** Key, meter, and writing music out: the careful reading behind the sheet, tab and rhythm views. */
 export const notation: ToolModuleFactory = (ctx) => {
   /** Notes and options for a request: given notes, given chords, or the last `seconds` of playing. */
-  const gather = (asked: Asked, seconds: number, guitar = false): { notes: NoteEvent[]; chords?: ChordSpan[]; options: NotationOptions } => {
+  const gather = (asked: Asked, seconds: number, guitar = false): GivenMusic => {
     const options = optionsFrom(asked)
-    if (asked.notes?.length) return { notes: fromBeats(asked.notes), options: { ...options, quarterSeconds: 0.5, origin: 0 } }
-    if (asked.chords?.length) {
-      const written = chordsAsNotes(asked.chords, guitar || asked.instrument === 'guitar' ? 'guitar' : 'keyboard')
-      return { notes: written.notes, chords: written.chords, options: { ...written.options, ...options } }
-    }
-    return { notes: ctx.transcript.window(ctx.now(), seconds), options }
+    const given = givenMusic({ notes: asked.notes?.length ? fromBeats(asked.notes) : undefined, chords: asked.chords }, options, guitar || asked.instrument === 'guitar' ? 'guitar' : 'keyboard')
+    return given ?? { notes: ctx.transcript.window(ctx.now(), seconds), options }
   }
 
   const readMusic = tool(
@@ -114,19 +115,34 @@ export const notation: ToolModuleFactory = (ctx) => {
       if (asked.key && !parseKey(asked.key)) return text(`I can't read "${asked.key}" as a key. Use a form like "F# minor" or "Bb major".`)
       const options = optionsFrom(asked)
       const instrument = view === 'tab' && options.instrument !== 'bass' ? 'guitar' : options.instrument
-      ctx.emit({
-        type: 'show-view',
-        view,
-        title,
-        instrument,
-        notes: asked.notes?.length ? fromBeats(asked.notes) : undefined,
-        chords: asked.notes?.length ? undefined : asked.chords,
-        data: { notation: { ...options, instrument } },
-      })
+      const notes = asked.notes?.length ? fromBeats(asked.notes) : undefined
+      const chords = asked.chords?.length ? asked.chords : undefined
+      ctx.emit({ type: 'show-view', view, title, instrument, notes, chords, data: { notation: { ...options, instrument } } })
       const chosen = Object.entries({ ...options, instrument })
         .filter(([, value]) => value !== undefined)
         .map(([name, value]) => `${name} ${value}`)
-      return text(`Showing ${view}${asked.notes?.length || asked.chords?.length ? '' : ' (live)'}${chosen.length ? ` with ${chosen.join(', ')}` : ''}.`)
+      const opened = `Showing ${view}${notes || chords ? '' : ' (live)'}${chosen.length ? ` with ${chosen.join(', ')}` : ''}.`
+      if (view === 'rhythm' || !(notes || chords)) return text(opened)
+      // Given music is written here exactly as the window writes it, so this is what is on screen.
+      const given = givenMusic({ notes, chords }, { ...options, instrument }, view === 'tab' || instrument === 'guitar' ? 'guitar' : 'keyboard')!
+      const written = { ...given.options, bars: barsToShow(false, given.options.bars), chords: given.chords }
+      const { score } = view === 'tab' ? transcribeTab(given.notes, written) : transcribe(given.notes, written)
+      return text(`${opened}\n${describeWritten(summariseScore(score, { view, title, live: false }))}`)
+    },
+  )
+
+  const readNotation = tool(
+    'read_notation',
+    'Check what the open sheet music and tab views have actually drawn: bars, lines, key, time signature, and the chord symbols bar by bar.',
+    {},
+    async () => {
+      try {
+        const { views } = await ctx.bus.request<NotationShown>(NOTATION, { type: 'read' } satisfies NotationRequest)
+        if (!views.length) return text('No sheet music or tab is on screen.')
+        return text(views.map(describeWritten).join('\n'))
+      } catch (error) {
+        return text(error instanceof Error ? error.message : String(error))
+      }
     },
   )
 
@@ -174,8 +190,9 @@ export const notation: ToolModuleFactory = (ctx) => {
   return {
     name: 'notation',
     guide: `- read_music: the careful reading of what they played: key (how sure, and its relative), key changes, time signature, the downbeat, tempo, swing, and chords bar by bar. Its key and meter are better than listen's rough ones; call it before you name a key or a time signature, count bars, or write anything out.
-- notate: open sheet music, tab or the rhythm grid written the way they ask: "as bass tab", "capo on two", "drop D", "write that in six eight", "it's swung", "put it in F sharp minor", "just the last four bars". Plain show opens the same views with everything detected for them; use notate when they have made a choice, and call it again with the new choice to change it. Sheet music uses a grand staff for wide piano playing, and the guitar's and bass's own clefs. Never read notation aloud.
+- notate: open sheet music, tab or the rhythm grid written the way they ask: "as bass tab", "capo on two", "drop D", "write that in six eight", "it's swung", "put it in F sharp minor", "just the last four bars". Plain show opens the same views with everything detected for them; use notate when they have made a choice, and call it again with the new choice to change it. Sheet music uses a grand staff for wide piano playing, and the guitar's and bass's own clefs. Given notes or chords are written in full, every bar, wrapping onto as many lines as needed; pass chords with notes to label them, one symbol a bar. Its result says the bars and chords written. Never read notation aloud.
+- read_notation: what the sheet and tab views have actually drawn, bar count and chord symbols by bar. Use it when the player says the screen looks wrong, or before you talk about what is on it.
 - export_notation: save the music as a MusicXML file for notation software, as ABC text, or the tab as a text file, when they ask to keep, export, print or send it. Say that it is saved; give the location only if they ask.`,
-    tools: [readMusic, notate, exportNotation],
+    tools: [readMusic, notate, readNotation, exportNotation],
   }
 }

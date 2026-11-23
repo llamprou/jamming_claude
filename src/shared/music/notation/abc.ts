@@ -48,10 +48,15 @@ function abcBar(bar: ScoreBar, voice: number, staff: ScoreStaff, withChords: boo
   return out
 }
 
+/** Bars on each line of the written score: fewer when the bars are busy. */
+export function abcBarsPerLine(score: Score, opts: AbcOptions = {}): number {
+  const busiest = Math.max(1, ...score.bars.flatMap((b) => b.voices.map((v) => v.length)))
+  return opts.barsPerLine ?? (busiest > 12 ? 2 : busiest > 7 ? 3 : 4)
+}
+
 export function scoreToAbc(score: Score, opts: AbcOptions = {}): string {
   const { meter, key } = score
-  const busiest = Math.max(1, ...score.bars.flatMap((b) => b.voices.map((v) => v.length)))
-  const perLine = opts.barsPerLine ?? (busiest > 12 ? 2 : busiest > 7 ? 3 : 4)
+  const perLine = abcBarsPerLine(score, opts)
   const grand = score.staves.length > 1
   const tempo = `${meter.compound ? '3/8' : '1/4'}=${Math.round(meter.bpm)}`
   const header = ['X:1']

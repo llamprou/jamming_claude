@@ -730,7 +730,7 @@ describe('tablature', () => {
 
   it('draws tab as a staff with rhythm and exports text with bar lines', () => {
     const hits: Hit[] = [[0, 2, [48, 52, 55, 60, 64]], [2, 0.5, [60]], [2.5, 0.5, [62]], [3, 1, [64]], [4, 1.5, [55]], [5.5, 0.5, [57]], [6, 2, [43, 47, 50, 55, 59, 67]]]
-    const { tab, score } = transcribeTab(play(hits, 0.5, 0), { quarterSeconds: 0.5, origin: 0, key: 'C major', chords: [{ symbol: 'CM', start: 0, end: 1, pitchClasses: [0, 4, 7] }] })
+    const { tab, score } = transcribeTab(play(hits, 0.5, 0), { quarterSeconds: 0.5, origin: 0, key: 'C major', chords: [{ symbol: 'C', start: 0, end: 1, pitchClasses: [0, 4, 7] }] })
     expect(score.staves[0]!.clef).toBe('treble-8')
     expect(tab.stringNames).toEqual(['E', 'A', 'D', 'G', 'B', 'e'])
     expect(tab.bars).toHaveLength(2)

@@ -76,6 +76,12 @@ export interface ScoreOptions {
   staff?: StaffLayout
   /** Chord spans to write above the staff. Detected from the notes if absent; false for none. */
   chords?: ChordSpan[] | false
+  /**
+   * Write the chord symbols exactly as given, one on every span (repeats
+   * included), and extend the score to the last span even where nothing sounds.
+   * Otherwise they are respelled for the key and repeats are collapsed.
+   */
+  chordsAsWritten?: boolean
   /** Keep only the last so many bars. */
   maxBars?: number
   title?: string
@@ -419,7 +425,9 @@ export function buildScore(notes: NoteEvent[], opts: ScoreOptions = {}): Score {
   const spelling = spellNotes(sounding, key, spans)
 
   const voices = staves.map((_, staff) => quantiseVoice(sounding, sounding.map((_, i) => i).filter((i) => staffOf[i] === staff), meter))
-  const end = Math.max(0, ...voices.flatMap((v) => v.segments.map((s) => s.end)))
+  const written = opts.chordsAsWritten === true
+  const chordEnd = written ? Math.max(0, ...spans.map((s) => Math.round(beatPosition(meter, s.end) * beatTicks))) : 0
+  const end = Math.max(0, chordEnd, ...voices.flatMap((v) => v.segments.map((s) => s.end)))
   const barCount = Math.max(1, Math.ceil(end / barTicks))
   const engraved = voices.map((v) => engrave(v.segments, v.tuplets, meter, barCount))
 
@@ -490,11 +498,12 @@ export function buildScore(notes: NoteEvent[], opts: ScoreOptions = {}): Score {
   for (const span of spans) {
     if (beatPosition(meter, span.end) - beatPosition(meter, span.start) < 0.5) continue
     const at = Math.max(0, Math.round((beatPosition(meter, span.start) * beatTicks) / step) * step)
-    const symbol = respellChord(span.symbol, key)
+    const symbol = written ? span.symbol : respellChord(span.symbol, key)
     const barIndex = Math.floor(at / barTicks)
     const bar = bars[barIndex]
+    if (!bar) continue
     // A melody note over a held chord renames it (C, then Cadd9); within a bar the first name of a root stands.
-    if (!bar || symbol === previous || (barIndex === previousBar && rootOf(symbol) === rootOf(previous))) continue
+    if (!written && (symbol === previous || (barIndex === previousBar && rootOf(symbol) === rootOf(previous)))) continue
     previous = symbol
     previousBar = barIndex
     const offset = frac(at % barTicks, TICKS)

@@ -85,6 +85,8 @@ export function transcribe(
     instrument: opts.instrument,
     staff: opts.staff,
     chords,
+    // Chords someone named are written as named, every bar; detected ones are tidied for the key.
+    chordsAsWritten: opts.chords !== undefined,
     maxBars: opts.bars,
     title: opts.title,
   })
@@ -103,21 +105,66 @@ export function transcribeTab(
   return { ...result, tab }
 }
 
+/** Seconds in one bar of each signature with the quarter note at 120 (the grid agent-given music is written on). */
+const BAR_SECONDS: Record<TimeSignatureName, number> = { '4/4': 2, '3/4': 1.5, '6/8': 1.5, '12/8': 3 }
+
 /**
- * Notes and chord spans for a bare list of chord symbols: one bar of 4/4 each
- * at 120, so they can be written out. For the guitar they are voiced as the
- * usual open shapes where there is one; otherwise close, around middle C.
+ * Chord spans for a list of symbols, one bar each from a bar line at zero, at
+ * 120 to the quarter. Every symbol gets its bar, even one that cannot be voiced.
  */
-export function chordsAsNotes(symbols: string[], voicing: 'keyboard' | 'guitar' = 'keyboard'): { notes: NoteEvent[]; chords: ChordSpan[]; options: NotationOptions } {
-  const notes: NoteEvent[] = []
-  const chords: ChordSpan[] = []
-  symbols.forEach((symbol, i) => {
-    const pitches = (voicing === 'guitar' ? openShapePitches(symbol) : null) ?? chordPitches(symbol, voicing === 'guitar' ? 3 : 4)
-    for (const pitch of pitches) notes.push({ pitch, start: i * 2, duration: 2, velocity: 0.8, source: 'agent', confidence: 1 })
-    if (pitches.length) chords.push({ symbol, start: i * 2, end: i * 2 + 2, pitchClasses: [...new Set(pitches.map((p) => p % 12))] })
-  })
-  return { notes, chords, options: { quarterSeconds: 0.5, origin: 0, timeSignature: '4/4', ...(voicing === 'keyboard' ? { staff: 'treble' as const } : {}) } }
+export function chordSpansByBar(symbols: string[], timeSignature: TimeSignatureName = '4/4'): ChordSpan[] {
+  const bar = BAR_SECONDS[timeSignature]
+  return symbols.map((symbol, i) => ({ symbol, start: i * bar, end: (i + 1) * bar, pitchClasses: [...new Set(chordPitches(symbol, 4).map((p) => p % 12))] }))
 }
+
+/**
+ * Notes and chord spans for a bare list of chord symbols: one bar each at 120
+ * (4/4 unless another signature is given), so they can be written out. For
+ * the guitar they are voiced as the usual open shapes where there is one;
+ * otherwise close, around middle C.
+ */
+export function chordsAsNotes(
+  symbols: string[],
+  voicing: 'keyboard' | 'guitar' = 'keyboard',
+  timeSignature: TimeSignatureName = '4/4',
+): { notes: NoteEvent[]; chords: ChordSpan[]; options: NotationOptions } {
+  const notes: NoteEvent[] = []
+  const chords = chordSpansByBar(symbols, timeSignature)
+  chords.forEach((span) => {
+    const pitches = (voicing === 'guitar' ? openShapePitches(span.symbol) : null) ?? chordPitches(span.symbol, voicing === 'guitar' ? 3 : 4)
+    for (const pitch of pitches) notes.push({ pitch, start: span.start, duration: span.end - span.start, velocity: 0.8, source: 'agent', confidence: 1 })
+    if (pitches.length) span.pitchClasses = [...new Set(pitches.map((p) => p % 12))]
+  })
+  return { notes, chords, options: { quarterSeconds: 0.5, origin: 0, timeSignature, ...(voicing === 'keyboard' ? { staff: 'treble' as const } : {}) } }
+}
+
+/** What a written view or export works from when the agent supplied the music. */
+export interface GivenMusic {
+  notes: NoteEvent[]
+  /** The given chord symbols as spans; written exactly as given. */
+  chords?: ChordSpan[]
+  options: NotationOptions
+}
+
+/**
+ * Given notes (seconds at 120, bar line at zero), given chord symbols (one a
+ * bar), or both: the notes then carry the symbols above them. Null when
+ * neither is given, meaning the live playing is wanted.
+ */
+export function givenMusic(given: { notes?: NoteEvent[]; chords?: string[] }, options: NotationOptions, voicing: 'keyboard' | 'guitar' = 'keyboard'): GivenMusic | null {
+  const timeSignature = options.timeSignature ?? '4/4'
+  if (given.notes?.length) {
+    return { notes: given.notes, chords: given.chords?.length ? chordSpansByBar(given.chords, timeSignature) : undefined, options: { quarterSeconds: 0.5, origin: 0, ...options } }
+  }
+  if (given.chords?.length) {
+    const written = chordsAsNotes(given.chords, voicing, timeSignature)
+    return { notes: written.notes, chords: written.chords, options: { ...written.options, ...options } }
+  }
+  return null
+}
+
+/** Bars a written view shows: live playing keeps the latest 8 unless asked; given music shows every bar unless asked. */
+export const barsToShow = (live: boolean, asked?: number): number | undefined => asked ?? (live ? 8 : undefined)
 
 /** Chord symbols respelled for a key, with repeats collapsed. */
 export function chordNames(chords: Array<ChordSpan | string>, key: Key | null): string[] {

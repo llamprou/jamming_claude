@@ -4,12 +4,14 @@ import abcjs from 'abcjs'
 import { useEffect, useMemo, useRef } from 'react'
 import {
   analyseMeter,
+  barsToShow,
   chordNames,
-  chordsAsNotes,
   findKey,
+  givenMusic,
   readNotationOptions,
   rhythmGrid,
   scoreToAbc,
+  summariseScore,
   tabToSvg,
   transcribe,
   transcribeTab,
@@ -19,6 +21,7 @@ import {
   type NotationOptions,
 } from '@shared/music/notation'
 import type { ChordSpan, NoteEvent } from '@shared/music/types'
+import { forgetShown, recordShown } from '../features/notation'
 import { registerView, type ViewProps } from './registry'
 import './notation.css'
 
@@ -47,26 +50,17 @@ function sourceFor({ panel, snapshot }: ViewProps): Source {
     const seen = fretHints.latest()
     if (seen && seen.confidence >= 0.5 && sessionNow() - seen.time < 3 && (!instrument || seen.instrument === instrument)) asked.handFret = seen.lowFret
   }
-  let notes: NoteEvent[]
-  let chords: ChordSpan[] | undefined
-  let options: NotationOptions = { ...asked, instrument }
-  const live = !panel.notes && !panel.chords
-  if (panel.notes) {
-    // Notes from the agent are in beats at 120 with a bar line at zero.
-    notes = panel.notes
-    options = { quarterSeconds: 0.5, origin: 0, ...options }
-  } else if (panel.chords) {
-    const written = chordsAsNotes(panel.chords, panel.view === 'tab' || instrument === 'guitar' ? 'guitar' : 'keyboard')
-    notes = written.notes
-    chords = written.chords
-    options = { ...written.options, ...options }
-  } else {
-    notes = snapshot?.notes ?? []
-  }
+  // Notes from the agent are in beats at 120 with a bar line at zero; chord symbols given with them ride above, one a bar.
+  const given = givenMusic({ notes: panel.notes, chords: panel.chords }, { ...asked, instrument }, panel.view === 'tab' || instrument === 'guitar' ? 'guitar' : 'keyboard')
+  const live = given === null
+  const notes = given?.notes ?? snapshot?.notes ?? []
+  const chords = given?.chords
+  const options: NotationOptions = { ...(given?.options ?? { ...asked, instrument }) }
+  options.bars = barsToShow(live, options.bars)
   const last = notes[notes.length - 1]
   const held = Math.round(notes.reduce((sum, n) => sum + n.duration, 0) * 4)
-  const pitches = notes.reduce((sum, n) => sum + n.pitch, 0)
-  const id = `${live ? 'live' : 'given'}|${notes.length}|${last?.start.toFixed(2) ?? ''}|${held}|${pitches}|${JSON.stringify(options)}`
+  const pitches = notes.reduce((sum, n) => sum + n.pitch * (1 + (Math.round(n.start * 4) % 97)), 0)
+  const id = `${live ? 'live' : 'given'}|${notes.length}|${last?.start.toFixed(2) ?? ''}|${held}|${pitches}|${chords?.map((c) => c.symbol).join(',') ?? ''}|${JSON.stringify(options)}`
   return { live, notes, chords, options, id }
 }
 
@@ -113,14 +107,20 @@ function SheetView(props: ViewProps) {
   const source = sourceFor(props)
   const paper = useRef<HTMLDivElement>(null)
   const result = useMemo(
-    () => cached(`sheet|${source.id}`, () => steady(source, transcribe(source.notes, { ...source.options, bars: source.options.bars ?? 8, chords: source.chords, meter: meterOf(source), previousKey: source.live ? liveKey : null }))),
+    () => cached(`sheet|${source.id}`, () => steady(source, transcribe(source.notes, { ...source.options, chords: source.chords, meter: meterOf(source), previousKey: source.live ? liveKey : null }))),
     [source.id],
   )
   const abc = useMemo(() => scoreToAbc(result.score), [result])
+  const { title } = props.panel
   useEffect(() => {
     if (!paper.current) return
-    abcjs.renderAbc(paper.current, abc, { responsive: 'resize', staffwidth: 760, paddingtop: 6, paddingbottom: 6, paddingleft: 8, paddingright: 8 })
-  }, [abc])
+    const tunes = abcjs.renderAbc(paper.current, abc, { responsive: 'resize', staffwidth: 760, paddingtop: 6, paddingbottom: 6, paddingleft: 8, paddingright: 8 })
+    // Report what was drawn, with the line count abcjs actually laid out.
+    const summary = summariseScore(result.score, { view: 'sheet', title, live: source.live })
+    const lines = tunes[0]?.lines?.length
+    recordShown(lines ? { ...summary, lines } : summary)
+  }, [abc, title])
+  useEffect(() => () => forgetShown('sheet'), [])
   if (source.live && source.notes.length === 0) return <p className="quiet">Listening…</p>
   return (
     <>
@@ -133,10 +133,13 @@ function SheetView(props: ViewProps) {
 function TabView(props: ViewProps) {
   const source = sourceFor(props)
   const result = useMemo(
-    () => cached(`tab|${source.id}`, () => steady(source, transcribeTab(source.notes, { ...source.options, bars: source.options.bars ?? 8, chords: source.chords, meter: meterOf(source), previousKey: source.live ? liveKey : null }))),
+    () => cached(`tab|${source.id}`, () => steady(source, transcribeTab(source.notes, { ...source.options, chords: source.chords, meter: meterOf(source), previousKey: source.live ? liveKey : null }))),
     [source.id],
   )
   const svg = useMemo(() => tabToSvg(result.tab), [result])
+  const { title } = props.panel
+  useEffect(() => recordShown(summariseScore(result.score, { view: 'tab', title, live: source.live })), [result, title])
+  useEffect(() => () => forgetShown('tab'), [])
   if (source.live && source.notes.length === 0) return <p className="quiet">Listening…</p>
   const { tab } = result
   const extra = `${tab.instrument} ${[...tab.stringNames].join(' ')}${tab.capo ? `, capo ${tab.capo}` : ''}`

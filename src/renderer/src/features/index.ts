@@ -8,12 +8,14 @@ import { start as camera } from './camera'
 import { start as sampler } from './sampler'
 import { start as transport } from './transport'
 import { start as whiteboard } from './whiteboard'
+import { start as notation } from './notation'
 
 const features: Array<() => void | Promise<void>> = [
   sampler,
   transport,
   camera,
   whiteboard,
+  notation,
 ]
 
 export function startFeatures(): void {
