@@ -14,6 +14,7 @@ Design stance: the agent is the product. Code here is a library of fast, dependa
   - `arrange/` reharmonization strategies (one file each under `reharm/`), bass lines, drum patterns, comping, and the `Arrangement` model.
   - `transport/` beat grid, beat tracker (tempo and phase over time), lookahead scheduler core, loop extraction, audio-loop maths.
   - `sampler.ts`, `capture.ts`, `wav.ts`, `synthkit.ts` sample zones and envelopes, building an instrument from recorded notes, WAV I/O, synthesized stand-in sounds.
+  - `notation/` key finding and pitch spelling, meter and downbeat analysis, the bar-structured score, ABC and MusicXML output, tablature fingering and SVG, the rhythm grid. This supersedes the estimators in `analysis.ts` and the renderers in `render.ts` for anything written; `listen` and the window footer use it too.
   - `vision/` hand landmarks to musical signals: fret-region and keyboard-hand hints, gestures.
 - `src/shared/views.ts` the list of views the agent can open. `src/shared/ipc.ts` the typed core contract between main and window. `src/shared/features/<name>.ts` message types for one feature's bus traffic.
 - `src/main/` Electron main process.
@@ -26,7 +27,7 @@ Design stance: the agent is the product. Code here is a library of fast, dependa
   - `voice/voice.ts` Deepgram Flux (speech-to-text and turn detection) and Cartesia Sonic (text-to-speech).
 - `src/renderer/src/` the window (React).
   - `audio/context.ts` the single AudioContext, `musicOutput()`, the session clock (`sessionNow`, `toAudioTime`) and `onMicBlock` for raw mic samples. `audio/voices.ts` the voice registry and built-in synth. `audio/player.ts` one-shot clip playback. `audio/mic.ts` mic capture and both transcription passes. `audio/speech.ts` the buddy's voice. `audio/midi.ts` Web MIDI. `audio.ts` re-exports them.
-  - `views/registry.ts` `registerView`; `views/core.tsx` the original seven; `views/index.ts` lists view modules.
+  - `views/registry.ts` `registerView`; `views/core.tsx` the original seven; `views/notation.tsx` supersedes sheet, tab, rhythm and chords; `views/transport.tsx`, `views/camera.tsx`; `views/index.ts` lists view modules (later imports win).
   - `features/bus.ts` the window end of the feature bus; `features/index.ts` lists window features. `features/sampler/` sampler voices (stock samples are fetched into `features/sampler/stock/`, gitignored), `features/transport/` the musical clock and looping layers, `features/camera/` camera and hand tracking (model in `assets/vision/`, gitignored).
   - `transcriber.worker.ts` runs the polyphonic model off the UI thread; `tap.worklet.js` taps mic samples on the audio thread.
 

@@ -39,6 +39,7 @@ Built and passing automated checks, but never heard or seen by a person:
 
 - MIDI input; two-speed audio transcription (fast single notes, corrected by a polyphonic model that hears chords).
 - Views the agent opens by voice: chords, rhythm, sheet, tab, piano, guitar, bass, transport, camera.
+- Written music: key with correct note spelling, time signature and downbeat (4/4, 3/4, 6/8, 12/8, swing), sheet music with ties, beams and a grand staff for piano, drawn tablature with rhythm, capo and tunings, and export to MusicXML, ABC or text tab.
 - Arrangement: reharmonization (eleven strategies), bass lines, drum patterns and comping in several styles.
 - Playing in time: a beat tracker follows your tempo; parts loop and come in on the bar line; your last bars can be looped as notes or as your recorded sound.
 - Sampled piano, guitar, bass and drums (see `src/renderer/src/features/sampler/stock/LICENSES.md` after install), and instruments built from your own recorded notes.
@@ -47,6 +48,6 @@ Built and passing automated checks, but never heard or seen by a person:
 
 Everything involving sound, a microphone, a camera or a real instrument has only been exercised with synthesized input. The voice pipeline has not been run against the real services from here.
 
-Not built yet: better notation (in progress), time-stretching of audio loops, a learned model of your instrument's timbre, MIDI output to external gear, and the packaged `.app`. The stock samples are Creative Commons Attribution; their credits are not yet shown in the app, which a distributed build must do.
+Not built yet: time-stretching of audio loops, a learned model of your instrument's timbre, MIDI output to external gear, and the packaged `.app`. The stock samples are Creative Commons Attribution; their credits are not yet shown in the app, which a distributed build must do.
 
 See `CLAUDE.md` for the code layout.
