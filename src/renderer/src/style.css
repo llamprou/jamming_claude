@@ -1,44 +1,59 @@
 :root {
-  color-scheme: light dark;
-  --bg: #111315;
-  --panel: #1b1e22;
+  color-scheme: dark;
+  --bg: #0d0f12;
+  --panel: #171a1f;
   --text: #ecebe6;
-  --muted: #8f949b;
+  --muted: #868c95;
   --accent: #f5a524;
-  --line: #2c3036;
+  --line: #272b32;
+  --bad: #ff6b6b;
   font: 15px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
-@media (prefers-color-scheme: light) {
-  :root { --bg: #f6f4ef; --panel: #fff; --text: #1d1d1b; --muted: #6b6f76; --line: #e2dfd7; }
-}
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); }
-.app { display: grid; grid-template-columns: 1fr 340px; height: 100vh; }
-.stage { min-width: 0; padding: 20px; overflow: auto; display: flex; flex-direction: column; gap: 16px; }
-.side { border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
-.bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.bar h1 { font-size: 16px; margin: 0 12px 0 0; }
-button, select { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
-button[aria-pressed='true'] { border-color: var(--accent); color: var(--accent); }
-.status { margin-left: auto; color: var(--muted); font-size: 13px; }
-.status.speaking, .status.thinking { color: var(--accent); }
-.status.error { color: #e5484d; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
-.card h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.chords { font-size: 34px; font-weight: 600; display: flex; flex-wrap: wrap; gap: 6px 22px; }
+html, body, #root { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); overflow: hidden; }
+
+.app { height: 100%; display: flex; flex-direction: column; }
+
+/* Stage: whatever the agent has opened. */
+.stage { flex: 1; min-height: 0; overflow: auto; padding: 24px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); align-content: start; }
+.empty .stage { display: none; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; min-width: 0; }
+.panel h2 { margin: 0 0 12px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.chords { font-size: 44px; font-weight: 600; display: flex; flex-wrap: wrap; gap: 4px 26px; line-height: 1.2; }
+.chords span { color: var(--muted); }
 .chords .now { color: var(--accent); }
-.grid { display: grid; grid-template-columns: repeat(16, 1fr); gap: 4px; }
-.grid span { height: 28px; border-radius: 4px; background: var(--line); }
+.chords .quiet { font-size: 18px; font-weight: 400; }
+.grid { display: grid; grid-template-columns: repeat(16, 1fr); gap: 5px; }
+.grid span { height: 40px; border-radius: 5px; background: var(--line); }
 .grid span.on { background: var(--accent); }
-.grid span:nth-child(4n + 1) { outline: 1px solid var(--muted); }
-pre.tab { font: 14px/1.3 ui-monospace, Menlo, monospace; margin: 0; overflow-x: auto; }
-.sheet { background: #fff; color: #000; border-radius: 8px; padding: 6px; overflow-x: auto; }
-.diagram svg { width: 100%; max-height: 180px; }
-.meta { color: var(--muted); font-size: 13px; }
-.log { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-.log p { margin: 0; }
-.log .user { color: var(--muted); }
-.log .partial { opacity: 0.6; }
-form.say { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
-form.say input { flex: 1; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
-.notice { font-size: 13px; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.grid span:nth-child(4n + 1) { box-shadow: 0 0 0 1px var(--muted); }
+pre.tab { font: 15px/1.35 ui-monospace, Menlo, monospace; margin: 0; overflow-x: auto; }
+.sheet { background: #fbfaf6; color: #000; border-radius: 8px; padding: 6px; overflow-x: auto; }
+.diagram svg { display: block; width: 100%; max-height: 220px; }
+
+/* Presence: the buddy itself. Centred when the screen is empty, docked when views are open. */
+.presence { display: grid; grid-template-columns: auto 1fr; grid-template-areas: 'orb captions' 'meta meta'; gap: 14px 20px; align-items: center; padding: 16px 24px 12px; border-top: 1px solid var(--line); }
+.empty .presence { flex: 1; border-top: 0; grid-template-columns: 1fr; grid-template-areas: 'orb' 'captions' 'meta'; grid-template-rows: auto auto auto; align-content: center; justify-items: center; text-align: center; padding-top: 0; }
+
+.orb { grid-area: orb; --level: 0; width: 56px; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffd58a, var(--accent) 55%, #b86a00); box-shadow: 0 0 calc(18px + var(--level) * 60px) calc(var(--level) * 14px) rgb(245 165 36 / 0.45); transform: scale(calc(1 + var(--level) * 0.18)); transition: transform 90ms linear, box-shadow 90ms linear, filter 300ms; }
+.empty .orb { width: 150px; align-self: end; margin-bottom: 12px; }
+.orb.thinking { animation: think 1.1s ease-in-out infinite; filter: saturate(0.6); }
+.orb.speaking { animation: speak 0.55s ease-in-out infinite alternate; }
+.orb.error { filter: grayscale(1); }
+@keyframes think { 50% { transform: scale(0.88); opacity: 0.7; } }
+@keyframes speak { to { transform: scale(1.14); box-shadow: 0 0 46px 10px rgb(245 165 36 / 0.5); } }
+@media (prefers-reduced-motion: reduce) { .orb { animation: none !important; transition: none; } }
+
+.captions { grid-area: captions; min-width: 0; max-width: 70ch; display: flex; flex-direction: column; gap: 4px; }
+.captions p { margin: 0; }
+.said { font-size: 19px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.empty .said { font-size: 24px; }
+.said.hint { color: var(--muted); }
+.heard { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.problem { color: var(--bad); font-size: 13px; }
+form.say input { width: min(100%, 420px); margin-top: 8px; font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+
+.meta { grid-area: meta; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--muted); }
+.empty .meta { justify-content: center; padding-bottom: 14px; }
+.meta .playing { color: var(--accent); }

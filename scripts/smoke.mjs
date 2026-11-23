@@ -1,5 +1,5 @@
 // Launches the built app and checks two paths end to end:
-//  1. MIDI in -> chord named on screen.
+//  1. No buttons; a view opens when the agent asks; MIDI in -> chord named on screen.
 //  2. Mic in (Chromium's fake capture device playing a synthesized chord
 //     progression) -> polyphonic slow pass in the worker -> chords on screen.
 // Run `npm run build` first. On Linux: `xvfb-run -a npm run smoke`.
@@ -58,6 +58,11 @@ try {
   const page = await app.firstWindow()
   page.on('console', (m) => (m.type() === 'error' || process.env.JAM_SMOKE_DEBUG) && console.error('renderer:', m.text()))
   page.on('pageerror', (e) => console.error('renderer error:', e.message))
+  // Nothing is on screen until the agent opens it; stand in for the agent here.
+  const fromAgent = (event) => app.evaluate(({ BrowserWindow }, e) => BrowserWindow.getAllWindows()[0].webContents.send('jam:event', e), event)
+  await page.waitForSelector('.orb')
+  if (await page.locator('button').count()) throw new Error('the voice-first screen should have no buttons')
+  await fromAgent({ type: 'show-view', view: 'chords' })
   await page.waitForSelector('.chords')
 
   await page.evaluate(() => {
@@ -69,7 +74,7 @@ try {
   })
   console.log('ok: MIDI in -> Dm7 on screen')
 
-  await page.click('text=Mic off')
+  // The mic starts on its own.
   // Audio only: wait until a chord that could only come from the polyphonic pass shows up.
   await page.waitForFunction(
     () => {
@@ -84,6 +89,11 @@ try {
     throw error
   })
   console.log('ok: mic audio -> polyphonic pass ->', await page.textContent('.chords'), '|', await page.textContent('.meta'))
+  await fromAgent({ type: 'show-view', view: 'piano' })
+  await page.waitForSelector('.diagram svg')
+  await fromAgent({ type: 'hide-view', view: 'chords' })
+  await page.waitForSelector('.chords', { state: 'detached' })
+  console.log('ok: agent opens and closes views')
   if (process.argv[2]) await page.screenshot({ path: process.argv[2] })
 } finally {
   await app.close()

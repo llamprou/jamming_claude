@@ -14,6 +14,8 @@ export interface ToolContext {
   /** Seconds on the session clock. */
   now(): number
   emit(event: MainEvent): void
+  /** Save a generated MIDI file where the player can find it; returns its path. */
+  saveMidi(name: string, midi: Uint8Array): Promise<string>
   /** Present only when self-extension is enabled (running from a source checkout). */
   extend?: (request: string) => Promise<string>
 }
@@ -41,7 +43,7 @@ const trackSchema = z.object({
   notes: z.array(noteSchema),
 })
 
-export const TOOL_NAMES = ['listen', 'show', 'play', 'stop', 'remember', 'recall', 'update_taste_profile', 'extend_self'] as const
+export const TOOL_NAMES = ['listen', 'show', 'hide', 'play', 'stop', 'remember', 'recall', 'update_taste_profile', 'extend_self'] as const
 
 export function createJamTools(ctx: ToolContext) {
   const listen = tool(
@@ -74,7 +76,7 @@ export function createJamTools(ctx: ToolContext) {
 
   const show = tool(
     'show',
-    "Show something on the player's screen. Without `chords` or `notes`, it shows what the player has been playing, live.",
+    "Open a view on the player's screen (several can be open at once; showing a view that is already open updates it). Without `chords` or `notes`, it follows what the player is playing, live.",
     {
       view: z.enum(['chords', 'rhythm', 'sheet', 'tab', 'piano', 'guitar', 'bass']),
       title: z.string().optional(),
@@ -116,9 +118,20 @@ export function createJamTools(ctx: ToolContext) {
       }
       if (clip.tracks.every((t) => t.notes.length === 0)) return text('Nothing to play: give chords or tracks with notes.')
       const midi = clipToMidi(clip)
-      ctx.emit({ type: 'play-clip', clip, midiBase64: Buffer.from(midi).toString('base64') })
+      const savedTo = await ctx.saveMidi(name, midi).catch(() => undefined)
+      ctx.emit({ type: 'play-clip', clip, savedTo })
       const seconds = (clipLengthBeats(clip) * 60) / bpm
-      return text(`Playing "${name}" now: ${clipToNotes(clip).length} notes, ${seconds.toFixed(1)}s at ${bpm} bpm.`)
+      return text(`Playing "${name}" now: ${clipToNotes(clip).length} notes, ${seconds.toFixed(1)}s at ${bpm} bpm.${savedTo ? ` MIDI file saved as ${savedTo}.` : ''}`)
+    },
+  )
+
+  const hide = tool(
+    'hide',
+    "Close a view on the player's screen, or all of them.",
+    { view: z.enum(['chords', 'rhythm', 'sheet', 'tab', 'piano', 'guitar', 'bass', 'all']) },
+    async ({ view }) => {
+      ctx.emit({ type: 'hide-view', view })
+      return text(view === 'all' ? 'Screen cleared.' : `Closed ${view}.`)
     },
   )
 
@@ -168,7 +181,7 @@ export function createJamTools(ctx: ToolContext) {
     },
   )
 
-  const tools = [listen, show, play, stop, remember, recall, updateProfile]
+  const tools = [listen, show, hide, play, stop, remember, recall, updateProfile]
 
   if (ctx.extend) {
     const extend = ctx.extend

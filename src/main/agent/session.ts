@@ -76,6 +76,11 @@ export class JamSession {
       },
     })
     void this.pump(this.run)
+    if (this.opts.voice) {
+      // There is no button to press, so the buddy speaks first: that is how the player knows it is live.
+      this.busy = true
+      this.inbox.push('[System note, not from the player] The session has just started and the player can hear you. Greet them in one short sentence and invite them to play or ask for something.')
+    }
   }
 
   /** A turn from the player, typed or transcribed from speech. */

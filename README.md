@@ -10,7 +10,9 @@ cp .env.example .env   # add your keys
 npm run dev
 ```
 
-You need an Anthropic API key. For voice, add a Deepgram key, a Cartesia key and a Cartesia voice ID; without them the app works with typed chat.
+There is nothing to click. The app starts listening when it opens and the buddy greets you; talk to it and play. Ask it to show things ("show me the chords", "put that on a guitar neck", "clear the screen") and to play ideas, which are also saved as MIDI files in `~/Music/Jamming Claude`. Escape silences it.
+
+You need an Anthropic API key, a Deepgram key, a Cartesia key and a Cartesia voice ID. Without the voice keys a text box appears as a fallback.
 
 ## How it fits together
 

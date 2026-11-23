@@ -4,63 +4,64 @@ import type { MainEvent } from '@shared/ipc'
 import { detectChords } from '@shared/music/analysis'
 import { chordPitches, diagramSvg, tabToAscii, toAbc, toTab } from '@shared/music/render'
 import type { Instrument, NoteEvent, Snapshot, ViewKind } from '@shared/music/types'
-import { flushVoice, playClip, playVoiceChunk, startMic, startMidi, stopClip, type MicHandle } from './audio'
+import { flushVoice, playClip, playVoiceChunk, startMic, startMidi, stopClip } from './audio'
 
-interface Line {
-  role: 'user' | 'buddy'
-  text: string
-  final: boolean
-}
+/**
+ * Voice-first: there are no controls. The mic and MIDI start on their own, the
+ * player talks and plays, and the agent decides what is on screen. The only
+ * things drawn here are the buddy's presence, the conversation as captions,
+ * and whatever views the agent has opened.
+ */
 
-/** What the agent asked to show; `null` content means "follow the live input". */
-interface Shown {
+interface Panel {
   view: ViewKind
   title?: string
   instrument?: Instrument
+  /** Absent means "follow the live input". */
   notes?: NoteEvent[]
   chords?: string[]
 }
 
-const VIEWS: ViewKind[] = ['chords', 'rhythm', 'sheet', 'tab', 'piano', 'guitar', 'bass']
+type AgentState = 'idle' | 'thinking' | 'speaking' | 'error'
+
 const clock = () => performance.now() / 1000
 
 export function App() {
-  const [status, setStatus] = useState<{ agent: string; detail?: string }>({ agent: 'idle' })
+  const [agent, setAgent] = useState<{ state: AgentState; detail?: string }>({ state: 'idle' })
   const [config, setConfig] = useState<{ voice: boolean; missing: string[] } | null>(null)
-  const [log, setLog] = useState<Line[]>([])
-  const [shown, setShown] = useState<Shown>({ view: 'chords' })
+  const [heard, setHeard] = useState('')
+  const [said, setSaid] = useState('')
+  const [panels, setPanels] = useState<Panel[]>([])
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
-  const [mic, setMic] = useState<MicHandle | null>(null)
-  const [midiInputs, setMidiInputs] = useState<string[] | null>(null)
+  const [playing, setPlaying] = useState<{ name: string; savedTo?: string } | null>(null)
+  const [inputs, setInputs] = useState<{ mic: string; midi: string }>({ mic: 'starting', midi: 'looking' })
   const [engine, setEngine] = useState('')
   const [draft, setDraft] = useState('')
-  const logEnd = useRef<HTMLDivElement>(null)
+  const orb = useRef<HTMLDivElement>(null)
+  const buddyDone = useRef(true)
 
   useEffect(() => {
-    const append = (role: Line['role'], text: string, final: boolean) =>
-      setLog((lines) => {
-        const last = lines[lines.length - 1]
-        if (last && last.role === role && !last.final) {
-          // Speech partials replace; streamed buddy text accumulates.
-          const merged = role === 'user' ? text : last.text + text
-          return [...lines.slice(0, -1), { role, text: merged || last.text, final }]
-        }
-        return text ? [...lines, { role, text, final }] : lines
-      })
-
     return window.jam.onEvent((event: MainEvent) => {
       switch (event.type) {
         case 'status':
-          return setStatus(event)
+          return setAgent({ state: event.agent, detail: event.detail })
         case 'config':
           return setConfig(event)
         case 'transcript':
-          return append(event.role, event.text, event.final)
+          if (event.role === 'user') return setHeard(event.text)
+          // Streamed reply: start a fresh caption when a new turn begins.
+          setSaid((previous) => (buddyDone.current ? event.text : previous + event.text))
+          buddyDone.current = event.final
+          return
         case 'show-view':
-          return setShown({ view: event.view, title: event.title, instrument: event.instrument, notes: event.notes, chords: event.chords })
+          return setPanels((open) => [{ ...event }, ...open.filter((p) => p.view !== event.view)].slice(0, 4))
+        case 'hide-view':
+          return setPanels((open) => (event.view === 'all' ? [] : open.filter((p) => p.view !== event.view)))
         case 'play-clip':
-          return playClip(event.clip)
+          setPlaying({ name: event.clip.name, savedTo: event.savedTo })
+          return playClip(event.clip, () => setPlaying(null))
         case 'stop-playback':
+          setPlaying(null)
           return stopClip()
         case 'tts-audio':
           return playVoiceChunk(event.pcm16Base64, event.sampleRate)
@@ -70,130 +71,122 @@ export function App() {
     })
   }, [])
 
-  // Live views follow the transcript in main.
+  // Inputs come up on their own: no button to press.
+  useEffect(() => {
+    let cancelled = false
+    let stopMic = () => {}
+    void (async () => {
+      const offset = (await window.jam.clock()) - clock()
+      try {
+        const mic = await startMic({
+          onSpeechPcm: window.jam.micAudio,
+          onNotes: window.jam.notes,
+          onCorrection: (c) => window.jam.revise(c.from, c.to, c.notes),
+          onEngine: setEngine,
+          onLevel: (level) => orb.current?.style.setProperty('--level', level.toFixed(2)),
+          now: () => clock() + offset,
+        })
+        if (cancelled) return mic.stop()
+        stopMic = mic.stop
+        setInputs((i) => ({ ...i, mic: 'on' }))
+      } catch (error) {
+        setInputs((i) => ({ ...i, mic: `unavailable (${error instanceof Error ? error.message : String(error)})` }))
+      }
+    })()
+    void startMidi(
+      (kind, pitch, velocity) => window.jam.midi(kind, pitch, velocity, clock()),
+      (names) => setInputs((i) => ({ ...i, midi: names.join(', ') || 'none connected' })),
+    ).catch(() => setInputs((i) => ({ ...i, midi: 'unavailable' })))
+    return () => {
+      cancelled = true
+      stopMic()
+    }
+  }, [])
+
   useEffect(() => {
     const timer = setInterval(() => void window.jam.snapshot(16).then(setSnapshot), 250)
     return () => clearInterval(timer)
   }, [])
 
+  // The one keyboard affordance: Escape silences everything.
   useEffect(() => {
-    // Braces matter: scrollIntoView returns a promise in current Chromium, and
-    // an effect must not return one.
-    logEnd.current?.scrollIntoView({ block: 'end' })
-  }, [log])
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && window.jam.interrupt()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
-  const toggleMic = async () => {
-    if (mic) {
-      mic.stop()
-      return setMic(null)
-    }
-    // Stamp audio on the main process's session clock, so fast notes and
-    // slow-pass corrections line up with MIDI.
-    const offset = (await window.jam.clock()) - clock()
-    setMic(
-      await startMic({
-        onSpeechPcm: window.jam.micAudio,
-        onNotes: window.jam.notes,
-        onCorrection: (c) => window.jam.revise(c.from, c.to, c.notes),
-        onEngine: setEngine,
-        now: () => clock() + offset,
-      }),
-    )
-  }
-
-  const connectMidi = async () => setMidiInputs(await startMidi((kind, pitch, velocity) => window.jam.midi(kind, pitch, velocity, clock())))
-
-  const live = !shown.notes && !shown.chords
-  const notes = shown.notes ?? snapshot?.notes ?? []
-  const chordSymbols = shown.chords ?? (shown.notes ? detectChords(shown.notes).map((c) => c.symbol) : (snapshot?.chords.map((c) => c.symbol) ?? []))
-  const sounding = useMemo(() => {
-    if (shown.chords?.length) return chordPitches(shown.chords[shown.chords.length - 1]!)
-    const end = Math.max(0, ...notes.map((n) => n.start + n.duration))
-    return notes.filter((n) => n.start + n.duration >= end - 0.25).map((n) => n.pitch)
-  }, [notes, shown.chords])
+  const offline = config?.missing.includes('ANTHROPIC_API_KEY') ?? false
+  const presence = agent.state === 'idle' ? 'listening' : agent.state
+  const hint = offline ? 'The buddy is offline.' : config && !config.voice ? 'Voice is off. Type below to talk.' : 'Just talk, or play something.'
 
   return (
-    <div className="app">
+    <div className={`app ${panels.length ? 'has-panels' : 'empty'}`}>
       <main className="stage">
-        <div className="bar">
-          <h1>Jamming Claude</h1>
-          <button aria-pressed={Boolean(mic)} onClick={() => void toggleMic()}>
-            {mic ? 'Mic on' : 'Mic off'}
-          </button>
-          <button aria-pressed={Boolean(midiInputs)} onClick={() => void connectMidi()}>
-            {midiInputs ? `MIDI: ${midiInputs.join(', ') || 'no device'}` : 'Connect MIDI'}
-          </button>
-          <select value={shown.view} onChange={(e) => setShown({ view: e.target.value as ViewKind })} aria-label="View">
-            {VIEWS.map((v) => (
-              <option key={v}>{v}</option>
-            ))}
-          </select>
-          <button onClick={() => window.jam.interrupt()}>Stop</button>
-          <span className={`status ${status.agent}`}>{status.detail ? `${status.agent}: ${status.detail}` : status.agent}</span>
-        </div>
-
-        <section className="card">
-          <h2>{shown.title ?? (live ? `${shown.view} · live` : shown.view)}</h2>
-          <View view={shown.view} instrument={shown.instrument} notes={notes} chords={chordSymbols} sounding={sounding} snapshot={live ? snapshot : null} />
-        </section>
-
-        {snapshot && (
-          <p className="meta">
-            {snapshot.key ? `Key ${snapshot.key.tonic} ${snapshot.key.mode}` : 'Key unclear'}
-            {snapshot.rhythm ? ` · ${snapshot.rhythm.bpm} bpm` : ''} · {snapshot.notes.length} notes in the last {snapshot.windowSeconds}s ·{' '}
-            {snapshot.correctedUntil === null ? 'fast pass' : `corrected to ${Math.max(0, snapshot.now - snapshot.correctedUntil).toFixed(0)}s ago`}
-            {engine ? ` · ${engine}` : ''}
-          </p>
-        )}
+        {panels.map((panel) => (
+          <section key={panel.view} className="panel">
+            <h2>{panel.title ?? (panel.notes || panel.chords ? panel.view : `${panel.view} · live`)}</h2>
+            <PanelView panel={panel} snapshot={snapshot} />
+          </section>
+        ))}
       </main>
 
-      <aside className="side">
-        {config && config.missing.length > 0 && (
-          <div className="notice">
-            {config.missing.includes('ANTHROPIC_API_KEY') ? 'The buddy is offline. ' : 'Voice is off; type to talk. '}
-            Missing: {config.missing.join(', ')}. Add them to .env and restart.
-          </div>
-        )}
-        <div className="log">
-          {log.map((line, i) => (
-            <p key={i} className={`${line.role} ${line.final ? '' : 'partial'}`}>
-              {line.text}
-            </p>
-          ))}
-          <div ref={logEnd} />
+      <footer className="presence">
+        <div ref={orb} className={`orb ${presence}`} role="status" aria-label={`Buddy is ${presence}`} />
+        <div className="captions" aria-live="polite">
+          {said ? <p className="said">{said}</p> : <p className="said hint">{hint}</p>}
+          {heard && <p className="heard">{heard}</p>}
+          {agent.state === 'error' && <p className="problem">{agent.detail}</p>}
+          {config && config.missing.length > 0 && <p className="problem">Missing in .env: {config.missing.join(', ')}</p>}
+          {config && !config.voice && !offline && (
+            <form
+              className="say"
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (draft.trim()) void window.jam.say(draft)
+                setDraft('')
+              }}
+            >
+              <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Type to talk (voice is off)" aria-label="Message" />
+            </form>
+          )}
         </div>
-        <form
-          className="say"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (draft.trim()) void window.jam.say(draft)
-            setDraft('')
-          }}
-        >
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Say something…" aria-label="Message" />
-          <button type="submit">Send</button>
-        </form>
-      </aside>
+        <div className="meta">
+          {playing && <span className="playing">♪ {playing.name}</span>}
+          <span>mic {inputs.mic}</span>
+          <span>MIDI {inputs.midi}</span>
+          {snapshot?.key && <span>{`${snapshot.key.tonic} ${snapshot.key.mode}`}</span>}
+          {snapshot?.rhythm && <span>{snapshot.rhythm.bpm} bpm</span>}
+          {snapshot?.correctedUntil != null && <span>corrected to {Math.max(0, snapshot.now - snapshot.correctedUntil).toFixed(0)}s ago</span>}
+          {engine && <span>{engine}</span>}
+        </div>
+      </footer>
     </div>
   )
 }
 
-function View(props: { view: ViewKind; instrument?: Instrument; notes: NoteEvent[]; chords: string[]; sounding: number[]; snapshot: Snapshot | null }) {
-  const { view, notes, chords, sounding, snapshot } = props
+function PanelView({ panel, snapshot }: { panel: Panel; snapshot: Snapshot | null }) {
+  const live = !panel.notes && !panel.chords
+  const notes = panel.notes ?? snapshot?.notes ?? []
+  const chords = panel.chords ?? (panel.notes ? detectChords(panel.notes).map((c) => c.symbol) : (snapshot?.chords.map((c) => c.symbol) ?? []))
+  const sounding = useMemo(() => {
+    if (panel.chords?.length) return chordPitches(panel.chords[panel.chords.length - 1]!)
+    const end = Math.max(0, ...notes.map((n) => n.start + n.duration))
+    return notes.filter((n) => n.start + n.duration >= end - 0.25).map((n) => n.pitch)
+  }, [notes, panel.chords])
   const sheet = useRef<HTMLDivElement>(null)
-  const bpm = snapshot?.rhythm?.bpm ?? 120
+  const bpm = live ? (snapshot?.rhythm?.bpm ?? 120) : 120
+  const key = live && snapshot?.key ? `${snapshot.key.tonic}${snapshot.key.mode === 'minor' ? 'm' : ''}` : 'C'
 
   useEffect(() => {
-    if (view !== 'sheet' || !sheet.current) return
-    const key = snapshot?.key ? `${snapshot.key.tonic}${snapshot.key.mode === 'minor' ? 'm' : ''}` : 'C'
+    if (panel.view !== 'sheet' || !sheet.current) return
     abcjs.renderAbc(sheet.current, toAbc(notes.slice(-64), { bpm, key }), { responsive: 'resize' })
-  }, [view, notes, bpm, snapshot?.key])
+  }, [panel.view, notes, bpm, key])
 
-  switch (view) {
+  switch (panel.view) {
     case 'chords':
       return (
         <div className="chords">
-          {chords.length === 0 && <span className="meta">Play something…</span>}
+          {chords.length === 0 && <span className="quiet">Listening…</span>}
           {chords.slice(-8).map((c, i, all) => (
             <span key={i} className={i === all.length - 1 ? 'now' : ''}>
               {c}
@@ -214,12 +207,12 @@ function View(props: { view: ViewKind; instrument?: Instrument; notes: NoteEvent
     case 'sheet':
       return <div className="sheet" ref={sheet} />
     case 'tab': {
-      const instrument = props.instrument === 'bass' ? 'bass' : 'guitar'
+      const instrument = panel.instrument === 'bass' ? 'bass' : 'guitar'
       return <pre className="tab">{tabToAscii(toTab(notes.slice(-48), instrument), instrument)}</pre>
     }
     case 'piano':
     case 'guitar':
     case 'bass':
-      return <div className="diagram" dangerouslySetInnerHTML={{ __html: diagramSvg(sounding, view) }} />
+      return <div className="diagram" dangerouslySetInnerHTML={{ __html: diagramSvg(sounding, panel.view) }} />
   }
 }

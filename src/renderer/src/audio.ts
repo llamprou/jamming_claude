@@ -19,8 +19,12 @@ let playing: AudioScheduledSourceNode[] = []
 
 const midiHz = (pitch: number) => 440 * 2 ** ((pitch - 69) / 12)
 
-export function playClip(clip: Clip): void {
+let playTimer: ReturnType<typeof setTimeout> | undefined
+
+export function playClip(clip: Clip, onEnded?: () => void): void {
   stopClip()
+  const lengthBeats = Math.max(0, ...clip.tracks.flatMap((t) => t.notes.map((n) => n.startBeat + n.durationBeats)))
+  playTimer = setTimeout(() => onEnded?.(), (lengthBeats * 60 * 1000) / clip.bpm + 400)
   const audio = ctx()
   const beat = 60 / clip.bpm
   const t0 = audio.currentTime + 0.08
@@ -67,6 +71,7 @@ export function playClip(clip: Clip): void {
 }
 
 export function stopClip(): void {
+  clearTimeout(playTimer)
   for (const node of playing) {
     try {
       node.stop()
@@ -126,6 +131,8 @@ export async function startMic(opts: {
   onCorrection(correction: Correction): void
   /** Reports which engine the slow pass is running on, and how long a run takes. */
   onEngine?(description: string): void
+  /** Mic loudness, 0-1, a few times a second: drives the on-screen presence. */
+  onLevel?(level: number): void
   now(): number
 }): Promise<MicHandle> {
   const audio = ctx()
@@ -155,6 +162,7 @@ export async function startMic(opts: {
       request?.reject(new Error(error))
     }
   }
+  let levelTick = 0
   const modelRate = new Resampler(audio.sampleRate)
   const ring = new AudioRing(30)
   const slowPass = new SlowPass(
@@ -186,6 +194,12 @@ export async function startMic(opts: {
 
   tap.port.onmessage = (message: MessageEvent<Float32Array>) => {
     const block = message.data
+
+    if (opts.onLevel && ++levelTick % 12 === 0) {
+      let sum = 0
+      for (let i = 0; i < block.length; i++) sum += block[i]! * block[i]!
+      opts.onLevel(Math.min(1, Math.sqrt(sum / block.length) * 8))
+    }
 
     ring.push(modelRate.process(block), opts.now())
     slowPass.tick()
@@ -233,11 +247,11 @@ export async function startMic(opts: {
 
 /* ---------- Web MIDI ---------- */
 
-export async function startMidi(onNote: (kind: 'on' | 'off', pitch: number, velocity: number) => void): Promise<string[]> {
+export async function startMidi(onNote: (kind: 'on' | 'off', pitch: number, velocity: number) => void, onDevices: (names: string[]) => void): Promise<void> {
   const access = await navigator.requestMIDIAccess()
-  const names: string[] = []
+  // Rebinding on every state change means a keyboard plugged in mid-session just works.
   const bind = () => {
-    names.length = 0
+    const names: string[] = []
     for (const input of access.inputs.values()) {
       names.push(input.name ?? 'MIDI input')
       input.onmidimessage = (event) => {
@@ -247,8 +261,8 @@ export async function startMidi(onNote: (kind: 'on' | 'off', pitch: number, velo
         else if (command === 0x80 || command === 0x90) onNote('off', pitch, 0)
       }
     }
+    onDevices(names)
   }
   bind()
   access.onstatechange = bind
-  return names
 }

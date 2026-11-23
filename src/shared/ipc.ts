@@ -5,7 +5,8 @@ export type MainEvent =
   | { type: 'status'; agent: 'idle' | 'thinking' | 'speaking' | 'error'; detail?: string }
   | { type: 'transcript'; role: 'user' | 'buddy'; text: string; final: boolean }
   | { type: 'show-view'; view: ViewKind; instrument?: Instrument; title?: string; notes?: NoteEvent[]; chords?: string[] }
-  | { type: 'play-clip'; clip: Clip; midiBase64: string }
+  | { type: 'hide-view'; view: ViewKind | 'all' }
+  | { type: 'play-clip'; clip: Clip; savedTo?: string }
   | { type: 'stop-playback' }
   | { type: 'tts-audio'; pcm16Base64: string; sampleRate: number }
   | { type: 'tts-flush' }

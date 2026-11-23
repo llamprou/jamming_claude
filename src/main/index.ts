@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { BrowserWindow, app, ipcMain, session as electronSession } from 'electron'
 import { CHANNELS, type MainEvent } from '@shared/ipc'
@@ -21,6 +22,9 @@ function loadDotEnv(): void {
 let window: BrowserWindow | null = null
 const emit = (event: MainEvent) => window?.webContents.send(CHANNELS.event, event)
 
+// The app talks and plays as soon as it opens; no click should be needed to unlock audio.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+
 async function main(): Promise<void> {
   await app.whenReady()
   loadDotEnv()
@@ -35,7 +39,20 @@ async function main(): Promise<void> {
 
   let voice: Voice | null = null
   const jam = new JamSession(
-    { transcript, memory, now, emit },
+    {
+      transcript,
+      memory,
+      now,
+      emit,
+      saveMidi: async (name, midi) => {
+        const dir = process.env.JAM_DATA_DIR ? join(process.env.JAM_DATA_DIR, 'ideas') : join(app.getPath('music'), 'Jamming Claude')
+        await mkdir(dir, { recursive: true })
+        const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-')
+        const path = join(dir, `${stamp} ${name.replace(/[^\w .-]+/g, '').trim() || 'idea'}.mid`)
+        await writeFile(path, midi)
+        return path
+      },
+    },
     {
       model: process.env.JAM_AGENT_MODEL ?? 'claude-opus-5-5',
       voice: voiceEnabled,

@@ -34,11 +34,15 @@ describe.skipIf(!process.env.JAM_LIVE)('live agent', () => {
       })
 
     const jam = new JamSession(
-      { transcript, memory, now: () => 6, emit: (e) => events.push(e) },
+      { transcript, memory, now: () => 6, emit: (e) => events.push(e), saveMidi: async (name) => `/tmp/${name}.mid` },
       { model: process.env.JAM_AGENT_MODEL ?? 'claude-opus-5-5', voice: true, onSpeech: (chunk) => (spoken += chunk), onSpeechEnd: () => undefined },
     )
     await jam.start()
     try {
+      // With voice on, the buddy speaks first.
+      events.push({ type: 'status', agent: 'thinking' })
+      await turn()
+      expect(spoken.length, 'no greeting').toBeGreaterThan(0)
       jam.say('What was that I just played? Play me four bars that could come next.')
       await turn()
       const played = events.find((e) => e.type === 'play-clip')

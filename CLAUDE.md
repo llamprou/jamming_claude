@@ -28,6 +28,7 @@ Design stance: the agent is the product. Code here is a library of fast, dependa
 
 ## Conventions
 
+- The interface is voice-first. The window has no buttons, menus or required typing: the mic and MIDI start on their own, and only the agent opens, updates and closes views (`show` / `hide`) and plays ideas. Do not add controls; add a tool the agent can call. A text box appears only as a fallback when voice keys are missing.
 - New capability = a pure function in `src/shared/music/` with a test, then a tool in `agent/tools.ts` that exposes it, then a line in the system prompt saying when to use it.
 - Tool results are written for the model to read; tool descriptions say what the tool is for. Keep both short.
 - Everything the live agent writes is spoken aloud. Keep the system prompt's voice rules intact.
