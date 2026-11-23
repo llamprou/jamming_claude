@@ -5,6 +5,7 @@ import { Scheduler, type Scheduled } from '@shared/music/transport/scheduler'
 import { clipLengthBeats } from '@shared/music/clip'
 import type { ClipTrack } from '@shared/music/types'
 import { audioContext, musicOutput, onMicBlock, sessionNow, toAudioTime } from '../../audio/context'
+import { playedNotes } from '../../audio/sounding'
 import { voiceFor } from '../../audio/voices'
 
 /**
@@ -333,6 +334,7 @@ export class TransportEngine {
     if (!track) return
     const duration = (event.durationBeats * 60) / this.grid.bpm
     for (const node of voiceFor(track).play({ pitch: event.pitch, velocity: event.velocity }, when, duration, sound.output, track)) this.track(sound, node)
+    playedNotes.add({ pitch: event.pitch, start: time, end: time + duration, layer: event.layerId, role: track.role })
     this.remember({ kind: 'note', layer: event.layerId, pitch: event.pitch, beat: event.beat, time, leadMs })
   }
 
@@ -356,6 +358,7 @@ export class TransportEngine {
   /** Fade a layer out and stop everything it has scheduled. */
   private silence(id: string, fade: number): void {
     const sound = this.sounding.get(id)
+    playedNotes.cut(sessionNow(), id)
     if (!sound) return
     this.sounding.delete(id)
     const audio = audioContext()

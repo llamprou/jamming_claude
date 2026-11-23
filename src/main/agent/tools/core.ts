@@ -7,6 +7,7 @@ import { analyseMeter, meterToText } from '@shared/music/notation/meter'
 import { chordPitches, chordsToText } from '@shared/music/render'
 import type { Clip, NoteEvent, Snapshot } from '@shared/music/types'
 import { VIEWS, viewKinds } from '@shared/views'
+import { instrumentViewData, isInstrumentView } from '@shared/features/instruments'
 import { noteSchema, text, trackSchema, type ToolModuleFactory } from '../toolkit'
 
 /** Tell the model how far to trust what it is about to read. */
@@ -58,8 +59,16 @@ export const core: ToolModuleFactory = (ctx) => {
       chords: z.array(z.string()).optional().describe('Chord symbols to show instead of the live input, e.g. ["Dm7","G7","Cmaj7"]'),
       notes: z.array(noteSchema).optional().describe('Notes to show instead of the live input (beats at 120 bpm)'),
       instrument: z.enum(['piano', 'guitar', 'bass']).optional().describe('For tab: guitar or bass'),
+      follow: z
+        .enum(['both', 'playback', 'player'])
+        .optional()
+        .describe('Piano/guitar/bass without chords or notes: light what you are playing back (loops, arrangements, play), what the player plays, or both (default: playback while it runs, else the player)'),
+      parts: z.array(z.string()).optional().describe('Piano/guitar/bass following playback: only these layer ids or track roles (e.g. ["chords"]); default all but drums'),
+      bpm: z.number().min(30).max(300).optional().describe('Piano/guitar/bass: tempo to step through notes or chords at when nothing is looping (default 120); while looping they follow the transport'),
+      beats_per_chord: z.number().positive().optional().describe('Piano/guitar/bass with several chords: beats each chord lights for (default 4)'),
+      loop: z.boolean().optional().describe('Piano/guitar/bass stepping through notes or chords: repeat (default) or once'),
     },
-    async ({ view, title, chords, notes, instrument }) => {
+    async ({ view, title, chords, notes, instrument, follow, parts, bpm, beats_per_chord, loop }) => {
       const asEvents: NoteEvent[] | undefined = notes?.map((n) => ({
         pitch: n.pitch,
         start: n.startBeat * 0.5,
@@ -68,8 +77,10 @@ export const core: ToolModuleFactory = (ctx) => {
         source: 'agent',
         confidence: 1,
       }))
-      ctx.emit({ type: 'show-view', view, title, chords, notes: asEvents, instrument })
-      return text(`Showing ${view}${chords || notes ? '' : ' (live)'}.`)
+      const data = isInstrumentView(view) ? instrumentViewData({ chords, notes, follow, parts, bpm, beats_per_chord, loop }) : undefined
+      ctx.emit({ type: 'show-view', view, title, chords, notes: asEvents, instrument, data })
+      const how = data?.steps ? ', stepping through them in time' : chords || notes ? '' : data ? ` (lighting ${data.follow === 'player' ? "the player's notes" : data.follow === 'playback' ? 'what you play back' : 'what you play back, else the player'} as they sound)` : ' (live)'
+      return text(`Showing ${view}${how}.`)
     },
   )
 
@@ -118,7 +129,7 @@ export const core: ToolModuleFactory = (ctx) => {
   return {
     name: 'core',
     guide: `- listen: what they've been playing just now (chords, key, tempo and groove, notes). Call it before you comment on or build from their playing; don't guess what you heard. For audio input the result says how recent the corrected transcription is.
-- show / hide: you run the screen. The player has no buttons or menus and is not typing; their hands are on an instrument. When they ask to see something, open it with show; when they ask you to close something or clear the screen, use hide. Open a view on your own whenever seeing would help, and close ones that are no longer relevant so the screen stays uncluttered. Showing is much faster than describing. Views: ${VIEWS.map((v) => `${v.kind} (${v.description})`).join('; ')}.
+- show / hide: you run the screen. The player has no buttons or menus and is not typing; their hands are on an instrument. When they ask to see something, open it with show; when they ask you to close something or clear the screen, use hide. Open a view on your own whenever seeing would help, and close ones that are no longer relevant so the screen stays uncluttered. Showing is much faster than describing. The piano, guitar and bass views animate: with no chords or notes they light what you are playing back (loops, arrangements, play) in time, else what the player plays (use follow and parts to choose, e.g. parts ["chords"] for just the comping); given several chords or timed notes they step through them in time with the transport. Views: ${VIEWS.map((v) => `${v.kind} (${v.description})`).join('; ')}.
 - play: play a musical idea through the speakers: a progression, a melody, a bass line, a groove, a solo. This is how you jam. When they ask for an idea, play it rather than describing it, and say a few words while it starts. Each idea is also saved as a MIDI file; mention where only if they ask.
 - stop: silence everything you are playing, loops included.`,
     tools: [listen, show, hide, play, stop],

@@ -13,9 +13,9 @@ export const VIEWS: ViewSpec[] = [
   { kind: 'rhythm', description: 'time signature, tempo, swing and the rhythm on its beats' },
   { kind: 'sheet', description: 'sheet music with key and time signature' },
   { kind: 'tab', description: 'guitar or bass tablature with rhythm' },
-  { kind: 'piano', description: 'notes lit on a piano keyboard' },
-  { kind: 'guitar', description: 'notes on a guitar neck' },
-  { kind: 'bass', description: 'notes on a bass neck' },
+  { kind: 'piano', description: 'piano keys lighting as notes sound (yours, the player\'s, or given notes stepped in time)' },
+  { kind: 'guitar', description: 'guitar neck lighting as notes sound' },
+  { kind: 'bass', description: 'bass neck lighting as notes sound' },
   { kind: 'transport', description: 'tempo, the beat of the bar and which parts are looping' },
   { kind: 'camera', description: 'the live camera picture with tracked hands; needs camera_on' },
 ]
