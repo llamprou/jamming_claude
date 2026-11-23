@@ -59,7 +59,7 @@ export class JamSession {
   async start(): Promise<void> {
     const tasteProfile = await this.ctx.memory.profile()
     const canExtend = Boolean(this.opts.sourceDir)
-    const toolbox = buildToolbox({ ...this.ctx, extend: canExtend ? (request) => this.extend(request) : undefined })
+    const toolbox = buildToolbox({ ...this.ctx, notify: (note) => this.notify(note), extend: canExtend ? (request) => this.extend(request) : undefined })
 
     this.run = query({
       prompt: this.inbox,
@@ -92,6 +92,13 @@ export class JamSession {
     this.ctx.emit({ type: 'status', agent: 'thinking' })
     this.busy = true
     this.inbox.push(trimmed)
+  }
+
+  /** A turn prompted by something the player did without speaking, e.g. pressing Done on the whiteboard. */
+  private notify(note: string): void {
+    this.ctx.emit({ type: 'status', agent: 'thinking' })
+    this.busy = true
+    this.inbox.push(`[System note, not from the player] ${note}`)
   }
 
   /** Barge-in: the player started talking (or hit stop) while the buddy was mid-turn. */

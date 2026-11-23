@@ -23,6 +23,11 @@ export interface ToolContext {
   bus: FeatureBus
   /** Save a generated MIDI file where the player can find it; returns its path. */
   saveMidi(name: string, midi: Uint8Array): Promise<string>
+  /**
+   * Give the agent a turn about something that happened without the player
+   * speaking (they pressed Done on the whiteboard). Absent in tests.
+   */
+  notify?: (note: string) => void
   /** Present only when self-extension is enabled (running from a source checkout). */
   extend?: (request: string) => Promise<string>
 }

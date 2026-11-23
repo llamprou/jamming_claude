@@ -8,6 +8,7 @@ import { memory } from './memory'
 import { notation } from './notation'
 import { transport } from './transport'
 import { vision } from './vision'
+import { whiteboard } from './whiteboard'
 
 /**
  * Every tool module the agent has, in the order their guidance appears in the
@@ -21,6 +22,7 @@ export const MODULES: ToolModuleFactory[] = [
   instruments,
   transport,
   vision,
+  whiteboard,
   memory,
   extend,
 ]

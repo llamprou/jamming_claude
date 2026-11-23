@@ -17,6 +17,7 @@ Design stance: the agent is the product. Code here is a library of fast, dependa
   - `notation/` key finding and pitch spelling, meter and downbeat analysis, the bar-structured score, ABC and MusicXML output, tablature fingering and SVG, the rhythm grid. This supersedes the estimators in `analysis.ts` and the renderers in `render.ts` for anything written; `listen` and the window footer use it too.
   - `sounding.ts` which pitches sound at a moment: the log of played notes and stepping through timed notes, for the animated instrument views.
   - `vision/` hand landmarks to musical signals: fret-region and keyboard-hand hints, gestures.
+- `src/shared/whiteboard.ts` the on-demand whiteboard's strokes, text and undo (pure). The window keeps the board in `features/whiteboard/`, draws it in `views/whiteboard.tsx`, and `agent/tools/whiteboard.ts` reads it back as text plus a PNG.
 - `src/shared/views.ts` the list of views the agent can open. `src/shared/ipc.ts` the typed core contract between main and window. `src/shared/features/<name>.ts` message types for one feature's bus traffic.
 - `src/main/` Electron main process.
   - `agent/session.ts` the live agent: one long-running Claude Agent SDK `query()` with streaming input. It has only the jam tools, no file or shell tools. Also hosts `extend`, the separate coding session.

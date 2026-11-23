@@ -1,0 +1,10 @@
+.whiteboard { display: flex; flex-direction: column; gap: 8px; }
+.whiteboard-surface { display: block; width: 100%; aspect-ratio: 16 / 10; max-height: 56vh; border-radius: 10px; background: #1f2329; border: 1px solid var(--line); touch-action: none; cursor: crosshair; }
+.whiteboard-surface.eraser { cursor: cell; }
+.whiteboard-text { width: 100%; box-sizing: border-box; resize: vertical; background: #1f2329; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; }
+.whiteboard-tools { display: flex; gap: 6px; align-items: center; }
+.whiteboard-tools .spacer { flex: 1; }
+.whiteboard-tools button { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+.whiteboard-tools button.on { color: var(--text); border-color: var(--muted); }
+.whiteboard-tools button.done { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.whiteboard-tools button:disabled { opacity: 0.4; cursor: default; }
