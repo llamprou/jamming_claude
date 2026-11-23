@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { findKey } from '@shared/music/notation/key'
+import { analyseMeter } from '@shared/music/notation/meter'
 import type { MainEvent } from '@shared/ipc'
 import type { Snapshot } from '@shared/music/types'
 import { flushVoice, playClip, playVoiceChunk, sessionNow, setClockOffset, startMic, startMidi, stopClip } from './audio'
@@ -107,6 +109,13 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // The same key and meter analysis the notation views and the agent's `listen` use, so they never disagree.
+  const reading = useMemo(() => {
+    const notes = snapshot?.notes ?? []
+    const meter = notes.length ? analyseMeter(notes) : null
+    return { key: notes.length ? (findKey(notes)?.name ?? null) : null, meter: meter ? `${meter.timeSignature} · ${Math.round(meter.bpm)} bpm` : null }
+  }, [snapshot])
+
   const offline = config?.missing.includes('ANTHROPIC_API_KEY') ?? false
   const presence = agent.state === 'idle' ? 'listening' : agent.state
   const hint = offline ? 'The buddy is offline.' : config && !config.voice ? 'Voice is off. Type below to talk.' : 'Just talk, or play something.'
@@ -146,8 +155,8 @@ export function App() {
           {playing && <span className="playing">♪ {playing.name}</span>}
           <span>mic {inputs.mic}</span>
           <span>MIDI {inputs.midi}</span>
-          {snapshot?.key && <span>{`${snapshot.key.tonic} ${snapshot.key.mode}`}</span>}
-          {snapshot?.rhythm && <span>{snapshot.rhythm.bpm} bpm</span>}
+          {reading.key && <span>{reading.key}</span>}
+          {reading.meter && <span>{reading.meter}</span>}
           {snapshot?.correctedUntil != null && <span>corrected to {Math.max(0, snapshot.now - snapshot.correctedUntil).toFixed(0)}s ago</span>}
           {engine && <span>{engine}</span>}
         </div>

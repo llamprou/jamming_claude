@@ -2,7 +2,9 @@ import { tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import { noteName } from '@shared/music/analysis'
 import { clipLengthBeats, clipToMidi, clipToNotes, progressionTrack } from '@shared/music/clip'
-import { chordPitches, chordsToText, rhythmToText } from '@shared/music/render'
+import { findKey } from '@shared/music/notation/key'
+import { analyseMeter, meterToText } from '@shared/music/notation/meter'
+import { chordPitches, chordsToText } from '@shared/music/render'
 import type { Clip, NoteEvent, Snapshot } from '@shared/music/types'
 import { VIEWS, viewKinds } from '@shared/views'
 import { noteSchema, text, trackSchema, type ToolModuleFactory } from '../toolkit'
@@ -27,12 +29,14 @@ export const core: ToolModuleFactory = (ctx) => {
     async ({ seconds, include_notes }) => {
       const snap = ctx.transcript.snapshot(ctx.now(), seconds)
       if (snap.notes.length === 0) return text(`Nothing heard in the last ${seconds} seconds.`)
+      const key = findKey(snap.notes)
+      const meter = analyseMeter(snap.notes)
       const lines = [
         `Window: last ${seconds}s, ${snap.notes.length} notes, sources: ${[...new Set(snap.notes.map((n) => n.source))].join(', ')}`,
         `Transcription: ${describeAccuracy(snap)}`,
-        `Key: ${snap.key ? `${snap.key.tonic} ${snap.key.mode} (fit ${snap.key.score.toFixed(2)})` : 'unclear'}`,
+        `Key: ${key ? `${key.name} (${key.confidence >= 0.6 ? 'clear' : key.confidence >= 0.3 ? 'fairly clear' : `unsure; could be ${key.relative.name}`})` : 'unclear'}`,
         `Chords: ${chordsToText(snap.chords)}`,
-        `Rhythm: ${rhythmToText(snap.rhythm)}`,
+        `Rhythm: ${meter ? meterToText(meter) : 'not enough to tell yet'}`,
       ]
       if (include_notes) {
         const start = snap.notes[0]!.start

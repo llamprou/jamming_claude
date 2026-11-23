@@ -1,0 +1,28 @@
+/* Written views (views/notation.tsx): sheet, tab, rhythm, chord key caption. */
+
+/* Notation needs the width of the window to be read; its panel takes a whole row. */
+.panel:has(.notation-sheet), .panel:has(.notation-tab) { grid-column: 1 / -1; }
+.notation-caption { margin: 10px 0 0; font-size: 12px; color: var(--muted); letter-spacing: 0.02em; }
+.notation-sheet { padding: 4px; }
+.notation-sheet svg { display: block; }
+.notation-tab { border-radius: 8px; overflow: hidden; background: #fbfaf6; }
+.notation-tab svg { display: block; width: 100%; height: auto; }
+
+.rhythm { display: grid; gap: 10px; }
+.rhythm-head { display: flex; align-items: center; gap: 18px; }
+.rhythm-signature { display: grid; font-size: 26px; font-weight: 700; line-height: 0.95; text-align: center; font-variant-numeric: tabular-nums; }
+.rhythm-signature b { display: block; }
+.rhythm-tempo { font-size: 22px; font-weight: 600; }
+.rhythm-feel { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.rhythm-row { display: grid; grid-template-columns: 44px 1fr; align-items: end; gap: 8px; }
+.rhythm-label { font-size: 11px; color: var(--muted); align-self: center; }
+.rhythm-bar { display: flex; gap: 12px; }
+.rhythm-beat { flex: 1; display: grid; grid-template-columns: 1fr; gap: 4px; align-items: end; }
+.rhythm .slot { height: 22px; border-radius: 4px; background: var(--line); }
+.rhythm .slot.s2 { height: 32px; }
+.rhythm .slot.s3 { height: 42px; box-shadow: 0 0 0 1px var(--muted); }
+.rhythm .slot.on { background: var(--accent); }
+.rhythm-row.usual .slot.on { background: var(--text); }
+.rhythm-row.count { align-items: start; }
+.rhythm-row.count .rhythm-beat span { font-size: 12px; color: var(--muted); }
+.rhythm-row.count .rhythm-beat span.one { color: var(--text); font-weight: 700; }

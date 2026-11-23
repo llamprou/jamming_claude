@@ -9,10 +9,10 @@ export interface ViewSpec {
 }
 
 export const VIEWS: ViewSpec[] = [
-  { kind: 'chords', description: 'chord names as they go by' },
-  { kind: 'rhythm', description: 'one-bar rhythm grid and tempo' },
-  { kind: 'sheet', description: 'sheet music' },
-  { kind: 'tab', description: 'guitar or bass tablature' },
+  { kind: 'chords', description: 'chord names as they go by, spelled for the key' },
+  { kind: 'rhythm', description: 'time signature, tempo, swing and the rhythm on its beats' },
+  { kind: 'sheet', description: 'sheet music with key and time signature' },
+  { kind: 'tab', description: 'guitar or bass tablature with rhythm' },
   { kind: 'piano', description: 'notes lit on a piano keyboard' },
   { kind: 'guitar', description: 'notes on a guitar neck' },
   { kind: 'bass', description: 'notes on a bass neck' },

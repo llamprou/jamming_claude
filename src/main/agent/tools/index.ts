@@ -5,6 +5,7 @@ import { core } from './core'
 import { extend } from './extend'
 import { instruments } from './instruments'
 import { memory } from './memory'
+import { notation } from './notation'
 import { transport } from './transport'
 import { vision } from './vision'
 
@@ -15,6 +16,7 @@ import { vision } from './vision'
  */
 export const MODULES: ToolModuleFactory[] = [
   core,
+  notation,
   arrange,
   instruments,
   transport,
