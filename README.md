@@ -35,12 +35,18 @@ You need an Anthropic API key, a Deepgram key, a Cartesia key and a Cartesia voi
 
 ## Status
 
-Working and tested: MIDI input, chord/key/tempo analysis, all seven views, clip playback and MIDI export, the agent loop with its tools, taste memory, and two-speed audio transcription (a fast single-note tracker, corrected every few seconds by a polyphonic model that hears chords).
+Built and passing automated checks, but never heard or seen by a person:
 
-Audio transcription has only been tested with synthesized tones, not a real instrument through a real microphone. In the cloud test machine the polyphonic model runs on the CPU, slower than real time; on a Mac it should use the GPU, which has not been measured.
+- MIDI input; two-speed audio transcription (fast single notes, corrected by a polyphonic model that hears chords).
+- Views the agent opens by voice: chords, rhythm, sheet, tab, piano, guitar, bass, transport, camera.
+- Arrangement: reharmonization (eleven strategies), bass lines, drum patterns and comping in several styles.
+- Playing in time: a beat tracker follows your tempo; parts loop and come in on the bar line; your last bars can be looped as notes or as your recorded sound.
+- Sampled piano, guitar, bass and drums (see `src/renderer/src/features/sampler/stock/LICENSES.md` after install), and instruments built from your own recorded notes.
+- Camera on request: the buddy can look at a frame, and hand tracking gives a coarse fret or keyboard position.
+- Taste memory, and self-extension through a separate coding session.
 
-Written but not yet run against the real services: the voice pipeline (needs keys and a microphone).
+Everything involving sound, a microphone, a camera or a real instrument has only been exercised with synthesized input. The voice pipeline has not been run against the real services from here.
 
-Not built yet: video input, sampled instrument sounds (playback is a simple built-in synth), MIDI output to external gear, and the packaged `.app`.
+Not built yet: better notation (in progress), time-stretching of audio loops, a learned model of your instrument's timbre, MIDI output to external gear, and the packaged `.app`. The stock samples are Creative Commons Attribution; their credits are not yet shown in the app, which a distributed build must do.
 
 See `CLAUDE.md` for the code layout.

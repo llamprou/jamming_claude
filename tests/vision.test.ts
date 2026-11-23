@@ -1,3 +1,4 @@
+import { Playback } from '../src/main/playback'
 import { describe, expect, it } from 'vitest'
 import type { CameraStatus } from '@shared/features/camera'
 import type { MainEvent } from '@shared/ipc'
@@ -231,7 +232,7 @@ describe('vision tools', () => {
         }
       })
     })
-    const module = vision({ transcript: new Transcript(), memory: new TasteMemory('/tmp/jam-vision-test'), now: () => 100, emit: () => undefined, bus, saveMidi: async () => '' })!
+    const module = vision({ transcript: new Transcript(), memory: new TasteMemory('/tmp/jam-vision-test'), now: () => 100, emit: () => undefined, bus, playback: new Playback(() => undefined), saveMidi: async () => '' })!
     const call = (name: string, args: Record<string, unknown> = {}) => module.tools.find((t) => t.name === name)!.handler(args, undefined)
     return { bus, module, call, requests }
   }
