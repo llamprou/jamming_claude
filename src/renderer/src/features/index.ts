@@ -5,9 +5,11 @@
  * start() runs once when the window opens.
  */
 import { start as sampler } from './sampler'
+import { start as transport } from './transport'
 
 const features: Array<() => void | Promise<void>> = [
   sampler,
+  transport,
 ]
 
 export function startFeatures(): void {

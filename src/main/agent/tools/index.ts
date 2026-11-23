@@ -5,6 +5,7 @@ import { core } from './core'
 import { extend } from './extend'
 import { instruments } from './instruments'
 import { memory } from './memory'
+import { transport } from './transport'
 
 /**
  * Every tool module the agent has, in the order their guidance appears in the
@@ -15,6 +16,7 @@ export const MODULES: ToolModuleFactory[] = [
   core,
   arrange,
   instruments,
+  transport,
   memory,
   extend,
 ]
