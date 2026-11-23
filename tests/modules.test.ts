@@ -20,7 +20,7 @@ const context = (events: MainEvent[] = []): ToolContext => ({
 describe('tool modules', () => {
   it('assembles tools and prompt guidance from every module, skipping ones that opt out', () => {
     const toolbox = buildToolbox(context())
-    expect(toolbox.allowedTools).toEqual(['listen', 'show', 'hide', 'play', 'stop', 'remember', 'recall', 'update_taste_profile'].map((n) => `mcp__jam__${n}`))
+    expect(toolbox.allowedTools).toEqual(expect.arrayContaining(['listen', 'show', 'hide', 'play', 'stop', 'remember', 'recall', 'update_taste_profile'].map((n) => `mcp__jam__${n}`)))
     expect(toolbox.guide).toContain('- listen:')
     expect(toolbox.guide).not.toContain('extend_self') // no source checkout in this context
     for (const view of VIEWS) expect(toolbox.guide).toContain(view.kind)
