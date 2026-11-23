@@ -76,7 +76,11 @@ export function App() {
     return () => clearInterval(timer)
   }, [])
 
-  useEffect(() => logEnd.current?.scrollIntoView({ block: 'end' }), [log])
+  useEffect(() => {
+    // Braces matter: scrollIntoView returns a promise in current Chromium, and
+    // an effect must not return one.
+    logEnd.current?.scrollIntoView({ block: 'end' })
+  }, [log])
 
   const toggleMic = async () => {
     if (mic) {
