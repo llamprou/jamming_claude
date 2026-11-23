@@ -9,6 +9,7 @@ import { JamSession } from './agent/session'
 import { FeatureBus } from './bus'
 import { Playback } from './playback'
 import { TasteMemory } from './memory/taste'
+import { createScreenCapturer } from './screen/capture'
 import { Voice } from './voice/voice'
 
 /** Minimal .env loader for development; real environment variables win. */
@@ -50,6 +51,7 @@ async function main(): Promise<void> {
       emit,
       bus,
       playback,
+      screen: createScreenCapturer(() => window, now),
       saveMidi: async (name, midi) => {
         const dir = process.env.JAM_DATA_DIR ? join(process.env.JAM_DATA_DIR, 'ideas') : join(app.getPath('music'), 'Jamming Claude')
         await mkdir(dir, { recursive: true })

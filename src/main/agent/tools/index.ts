@@ -6,6 +6,7 @@ import { extend } from './extend'
 import { instruments } from './instruments'
 import { memory } from './memory'
 import { notation } from './notation'
+import { screen } from './screen'
 import { transport } from './transport'
 import { vision } from './vision'
 import { whiteboard } from './whiteboard'
@@ -22,6 +23,7 @@ export const MODULES: ToolModuleFactory[] = [
   instruments,
   transport,
   vision,
+  screen,
   whiteboard,
   memory,
   extend,
