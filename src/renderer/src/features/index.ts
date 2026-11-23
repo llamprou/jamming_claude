@@ -4,7 +4,9 @@
  * (the feature bus, mic blocks, the voice registry), and is listed once below.
  * start() runs once when the window opens.
  */
-const features: Array<() => void | Promise<void>> = []
+import { start as sampler } from './sampler'
+
+const features: Array<() => void | Promise<void>> = [sampler]
 
 export function startFeatures(): void {
   for (const start of features) void Promise.resolve().then(start).catch((error) => console.error('feature failed to start', error))

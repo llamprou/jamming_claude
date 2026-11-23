@@ -3,14 +3,21 @@ import type { ToolContext, ToolModuleFactory } from '../toolkit'
 import { arrange } from './arrange'
 import { core } from './core'
 import { extend } from './extend'
+import { instruments } from './instruments'
 import { memory } from './memory'
 
 /**
  * Every tool module the agent has, in the order their guidance appears in the
  * system prompt. To add a capability: write a module in this folder and add
- * one line here.
+ * one import and one line to the list.
  */
-export const MODULES: ToolModuleFactory[] = [core, arrange, memory, extend]
+export const MODULES: ToolModuleFactory[] = [
+  core,
+  arrange,
+  instruments,
+  memory,
+  extend,
+]
 
 export function buildToolbox(ctx: ToolContext, factories: ToolModuleFactory[] = MODULES) {
   const modules = factories.flatMap((factory) => factory(ctx) ?? [])

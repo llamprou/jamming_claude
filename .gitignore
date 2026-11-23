@@ -9,3 +9,5 @@ dist/
 .jam-data/
 # working copies used by parallel coding agents
 .claude/worktrees/
+# downloaded stock instrument samples (node scripts/fetch-samples.mjs)
+src/renderer/src/features/sampler/stock/

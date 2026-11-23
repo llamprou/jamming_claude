@@ -9,13 +9,15 @@
     "node": ">=22"
   },
   "scripts": {
-    "postinstall": "node scripts/ensure-electron.mjs",
+    "postinstall": "node scripts/ensure-electron.mjs && (node scripts/fetch-samples.mjs || echo \"Instrument samples were not fetched; the app will use synthesized stand-ins. Run npm run samples to retry.\")",
+    "samples": "node scripts/fetch-samples.mjs",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "check": "npm run typecheck && npm test && npm run build",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:sampler": "node scripts/smoke-sampler.mjs",
     "dist:mac": "electron-vite build && electron-builder --mac"
   },
   "dependencies": {
