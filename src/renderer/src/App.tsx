@@ -4,7 +4,8 @@ import { analyseMeter } from '@shared/music/notation/meter'
 import type { MainEvent } from '@shared/ipc'
 import type { Snapshot } from '@shared/music/types'
 import { flushVoice, playClip, playVoiceChunk, sessionNow, setClockOffset, startMic, startMidi, stopClip } from './audio'
-import { routeFeatureEvent } from './features/bus'
+import { SLOW_PASS } from '@shared/features/slowpass'
+import { routeFeatureEvent, sendFeature } from './features/bus'
 import { startFeatures } from './features'
 import './views'
 import { viewFor, type Panel } from './views/registry'
@@ -77,6 +78,7 @@ export function App() {
           onNotes: window.jam.notes,
           onCorrection: (c) => window.jam.revise(c.from, c.to, c.notes),
           onEngine: setEngine,
+          onSlowPassStatus: (status) => sendFeature(SLOW_PASS, status),
           onLevel: (level) => orb.current?.style.setProperty('--level', level.toFixed(2)),
           now: sessionNow,
         })

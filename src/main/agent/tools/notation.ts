@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import { NOTATION, type NotationRequest, type NotationShown } from '@shared/features/notation'
+import { watchSlowPass } from '@shared/features/slowpass'
+import { describeSlowPass } from '@shared/music/slowpass'
 import {
   barsToShow,
   describeWritten,
@@ -63,6 +65,7 @@ const sureness = (confidence: number): string => (confidence >= 0.7 ? 'clear' : 
 
 /** Key, meter, and writing music out: the careful reading behind the sheet, tab and rhythm views. */
 export const notation: ToolModuleFactory = (ctx) => {
+  const slowPass = watchSlowPass(ctx.bus)
   /** Notes and options for a request: given notes, given chords, or the last `seconds` of playing. */
   const gather = (asked: Asked, seconds: number, guitar = false): GivenMusic => {
     const options = optionsFrom(asked)
@@ -102,6 +105,11 @@ export const notation: ToolModuleFactory = (ctx) => {
       }
       const chords = score.bars.filter((b) => b.chords.length).map((b) => `${b.number}: ${b.chords.map((c) => c.symbol).join(' ')}`)
       if (chords.length) lines.push(`Chords by bar: ${chords.join(' | ')}`)
+      if (notes.some((n) => n.source === 'audio')) {
+        const corrected = ctx.transcript.snapshot(now, 1).correctedUntil
+        const covered = corrected === null ? 'none of this audio is corrected yet, so chords cannot be heard in it' : `audio up to ${Math.max(0, now - corrected).toFixed(0)}s ago is corrected`
+        lines.push(`Audio transcription: ${covered}; ${describeSlowPass(slowPass(), now)}`)
+      }
       if (include_bars) lines.push('ABC:', scoreToAbc(score))
       return text(lines.join('\n'))
     },

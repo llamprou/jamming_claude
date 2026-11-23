@@ -1,6 +1,6 @@
 import type { NoteEvent } from '@shared/music/types'
 import { detectPitch, hzToMidi } from '@shared/music/pitch'
-import { AudioRing, Resampler, SlowPass, type Correction } from '@shared/music/slowpass'
+import { AudioRing, Resampler, SlowPass, type Correction, type SlowPassStatus } from '@shared/music/slowpass'
 import tapWorkletUrl from '../tap.worklet.js?url&no-inline'
 import type { TranscribeRequest, TranscribeResponse } from '../transcriber.worker'
 import { audioContext, publishMicBlock } from './context'
@@ -24,6 +24,8 @@ export async function startMic(opts: {
   onCorrection(correction: Correction): void
   /** Reports which engine the slow pass is running on, and how long a run takes. */
   onEngine?(description: string): void
+  /** About once a second: whether the slow pass is keeping up, for `listen` to report. */
+  onSlowPassStatus?(status: SlowPassStatus): void
   /** Mic loudness, 0-1, a few times a second: drives the on-screen presence. */
   onLevel?(level: number): void
   now(): number
@@ -40,20 +42,46 @@ export async function startMic(opts: {
 
   // Slow pass: keep the last 30 s at the model's sample rate and let the
   // scheduler decide when a stretch is ready to be re-heard.
-  const worker = new Worker(new URL('../transcriber.worker.ts', import.meta.url), { type: 'module' })
   const pending = new Map<number, { resolve(notes: NonNullable<TranscribeResponse['notes']>): void; reject(error: Error): void }>()
   let requestId = 0
-  worker.onmessage = (message: MessageEvent<TranscribeResponse>) => {
-    const { id, notes, error, backend, ms } = message.data
-    const request = pending.get(id)
-    pending.delete(id)
-    if (notes) {
-      opts.onEngine?.(`polyphonic pass on ${backend}, ${ms} ms`)
-      request?.resolve(notes)
-    } else {
-      opts.onEngine?.(`polyphonic pass failed: ${error}`)
-      request?.reject(new Error(error))
+  let onCpu = false
+  let gpuFailures = 0
+  const startWorker = (cpu: boolean): Worker => {
+    const created = new Worker(new URL('../transcriber.worker.ts', import.meta.url), { type: 'module', name: cpu ? 'cpu' : 'auto' })
+    created.onmessage = (message: MessageEvent<TranscribeResponse>) => {
+      const { id, notes, error, backend, ms } = message.data
+      const request = pending.get(id)
+      pending.delete(id)
+      if (backend) slowPass.engine = backend
+      if (notes) {
+        gpuFailures = 0
+        opts.onEngine?.(`polyphonic pass on ${backend}, ${ms} ms`)
+        request?.resolve(notes)
+      } else {
+        opts.onEngine?.(`polyphonic pass failed: ${error}`)
+        request?.reject(new Error(error))
+        // A GPU that keeps failing: start over on the CPU.
+        if (!onCpu && ++gpuFailures >= 2) restartOnCpu()
+      }
     }
+    created.onerror = (event) => {
+      event.preventDefault()
+      const reason = `transcriber worker crashed: ${event.message || 'could not start'}`
+      for (const request of pending.values()) request.reject(new Error(reason))
+      pending.clear()
+      opts.onEngine?.(`polyphonic pass failed: ${reason}`)
+      if (!onCpu) restartOnCpu()
+    }
+    return created
+  }
+  let worker = startWorker(false)
+  const restartOnCpu = () => {
+    onCpu = true
+    worker.terminate()
+    for (const request of pending.values()) request.reject(new Error('restarting the model on the CPU'))
+    pending.clear()
+    worker = startWorker(true)
+    slowPass.engine = 'cpu'
   }
   let levelTick = 0
   const modelRate = new Resampler(audio.sampleRate)
@@ -67,7 +95,17 @@ export async function startMic(opts: {
         worker.postMessage({ id, audio: samples } satisfies TranscribeRequest, [samples.buffer])
       }),
     opts.onCorrection,
+    {
+      // A hung GPU (seen on some Macs) never answers: drop it for the CPU. A hung CPU worker is restarted as is.
+      onTimeout: () => {
+        if (!onCpu) return restartOnCpu()
+        worker.terminate()
+        pending.clear()
+        worker = startWorker(true)
+      },
+    },
   )
+  let lastStatus = -Infinity
 
   const ratio = audio.sampleRate / 16000
   let resamplePhase = 0
@@ -97,6 +135,10 @@ export async function startMic(opts: {
 
     ring.push(modelRate.process(block), opts.now())
     slowPass.tick()
+    if (opts.onSlowPassStatus && ring.end - lastStatus >= 1) {
+      lastStatus = ring.end
+      opts.onSlowPassStatus(slowPass.status())
+    }
 
     for (; resamplePhase < block.length; resamplePhase += ratio) {
       speech.push(Math.max(-1, Math.min(1, block[Math.floor(resamplePhase)]!)) * 32767)

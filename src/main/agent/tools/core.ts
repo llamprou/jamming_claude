@@ -6,20 +6,24 @@ import { findKey } from '@shared/music/notation/key'
 import { analyseMeter, meterToText } from '@shared/music/notation/meter'
 import { chordPitches, chordsToText } from '@shared/music/render'
 import type { Clip, NoteEvent, Snapshot } from '@shared/music/types'
+import { describeSlowPass, type SlowPassStatus } from '@shared/music/slowpass'
+import { watchSlowPass } from '@shared/features/slowpass'
 import { VIEWS, viewKinds } from '@shared/views'
 import { instrumentViewData, isInstrumentView } from '@shared/features/instruments'
 import { noteSchema, text, trackSchema, type ToolModuleFactory } from '../toolkit'
 
 /** Tell the model how far to trust what it is about to read. */
-function describeAccuracy(snap: Snapshot): string {
+export function describeAccuracy(snap: Snapshot, slowPass: SlowPassStatus | null): string {
   if (!snap.notes.some((n) => n.source === 'audio')) return 'exact (MIDI input)'
-  if (snap.correctedUntil === null) return 'audio, fast pass only: single notes that may be wrong; chords are not heard yet'
+  const status = describeSlowPass(slowPass, snap.now)
+  if (snap.correctedUntil === null) return `audio, fast pass only: single notes that may be wrong; chords are not heard yet. ${status}`
   const lag = Math.max(0, snap.now - snap.correctedUntil)
-  return `audio, corrected by the polyphonic pass except the most recent ${lag.toFixed(0)}s, which are single-note guesses`
+  return `audio, corrected by the polyphonic pass except the most recent ${lag.toFixed(0)}s, which are single-note guesses. ${status}`
 }
 
 /** Hearing, the screen, and playback: the tools every session has. */
 export const core: ToolModuleFactory = (ctx) => {
+  const slowPass = watchSlowPass(ctx.bus)
   const listen = tool(
     'listen',
     'Get what the player has been playing recently: chords, key, tempo and groove, and the notes themselves.',
@@ -34,7 +38,7 @@ export const core: ToolModuleFactory = (ctx) => {
       const meter = analyseMeter(snap.notes)
       const lines = [
         `Window: last ${seconds}s, ${snap.notes.length} notes, sources: ${[...new Set(snap.notes.map((n) => n.source))].join(', ')}`,
-        `Transcription: ${describeAccuracy(snap)}`,
+        `Transcription: ${describeAccuracy(snap, slowPass())}`,
         `Key: ${key ? `${key.name} (${key.confidence >= 0.6 ? 'clear' : key.confidence >= 0.3 ? 'fairly clear' : `unsure; could be ${key.relative.name}`})` : 'unclear'}`,
         `Chords: ${chordsToText(snap.chords)}`,
         `Rhythm: ${meter ? meterToText(meter) : 'not enough to tell yet'}`,
@@ -128,7 +132,7 @@ export const core: ToolModuleFactory = (ctx) => {
 
   return {
     name: 'core',
-    guide: `- listen: what they've been playing just now (chords, key, tempo and groove, notes). Call it before you comment on or build from their playing; don't guess what you heard. For audio input the result says how recent the corrected transcription is.
+    guide: `- listen: what they've been playing just now (chords, key, tempo and groove, notes). Call it before you comment on or build from their playing; don't guess what you heard. For audio input the result says how recent the corrected transcription is, and whether the second (chord-hearing) pass is starting up, lagging or failing and why; if chords are missing, tell the player that plainly.
 - show / hide: you run the screen. The player has no buttons or menus and is not typing; their hands are on an instrument. When they ask to see something, open it with show; when they ask you to close something or clear the screen, use hide. Open a view on your own whenever seeing would help, and close ones that are no longer relevant so the screen stays uncluttered. Showing is much faster than describing. The piano, guitar and bass views animate: with no chords or notes they light what you are playing back (loops, arrangements, play) in time, else what the player plays (use follow and parts to choose, e.g. parts ["chords"] for just the comping); given several chords or timed notes they step through them in time with the transport. Views: ${VIEWS.map((v) => `${v.kind} (${v.description})`).join('; ')}.
 - play: play a musical idea through the speakers: a progression, a melody, a bass line, a groove, a solo. This is how you jam. When they ask for an idea, play it rather than describing it, and say a few words while it starts. Each idea is also saved as a MIDI file; mention where only if they ask.
 - stop: silence everything you are playing, loops included.`,
