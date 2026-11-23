@@ -80,14 +80,13 @@ export const arrange: ToolModuleFactory = (ctx) => {
 
   /** Render, save and hand the clip to the player's speakers; returns a sentence for the tool result. */
   async function play(a: Arrangement): Promise<string> {
-    const bars = arrangementBeats(a) / a.beatsPerBar
-    const repeats = bars <= 4 ? 2 : 1
-    const clip = renderArrangement(a, { repeats })
+    const clip = renderArrangement(a, { repeats: 1 })
     if (clip.tracks.length === 0) return 'Nothing to play: the arrangement has no layers.'
     const savedTo = await ctx.saveMidi(a.name, clipToMidi(clip)).catch(() => undefined)
-    ctx.emit({ type: 'play-clip', clip, savedTo })
-    const seconds = (clipLengthBeats(clip) * 60) / a.bpm
-    return `Playing it now${repeats > 1 ? `, ${repeats} times through` : ''} (${seconds.toFixed(0)}s).${savedTo ? ` MIDI saved as ${savedTo}.` : ''}`
+    // One stable id, so each change replaces the arrangement at the bar line instead of stacking on it.
+    const how = await ctx.playback.play(clip, { loop: true, id: 'arrangement', savedTo })
+    const bars = arrangementBeats(a) / a.beatsPerBar
+    return `${bars} bars. ${how}${savedTo ? ` MIDI saved as ${savedTo}.` : ''}`
   }
 
   const finish = async (a: Arrangement, lead: string, shouldPlay: boolean) =>

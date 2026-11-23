@@ -1,3 +1,4 @@
+import { Playback } from '../src/main/playback'
 import { describe, expect, it } from 'vitest'
 import type { MainEvent } from '@shared/ipc'
 import type { TransportRequest, TransportState } from '@shared/features/transport'
@@ -592,7 +593,7 @@ describe('transport tools', () => {
       requests.push(event.message as TransportRequest)
       queueMicrotask(() => bus.settle(event.id, reply(event.message as TransportRequest)))
     })
-    const ctx: ToolContext = { transcript: new Transcript(), memory: new TasteMemory('/tmp/jam-transport-test'), now: () => now, emit: (e) => events.push(e), bus, saveMidi: async () => '/tmp/x.mid' }
+    const ctx: ToolContext = { transcript: new Transcript(), memory: new TasteMemory('/tmp/jam-transport-test'), now: () => now, emit: (e) => events.push(e), bus, playback: new Playback((e) => events.push(e)), saveMidi: async () => '/tmp/x.mid' }
     const module = transport(ctx)!
     const call = async (name: string, args: Record<string, unknown>) => {
       const found = module.tools.find((t) => t.name === name)!

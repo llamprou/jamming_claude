@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { MainEvent } from '@shared/ipc'
 import type { Transcript } from '@shared/music/transcript'
 import type { FeatureBus } from '../bus'
+import type { Playback } from '../playback'
 import type { TasteMemory } from '../memory/taste'
 
 /**
@@ -16,6 +17,8 @@ export interface ToolContext {
   now(): number
   /** Core UI events (views, playback, captions). Feature modules use `bus` instead. */
   emit(event: MainEvent): void
+  /** How tools make sound: `playback.play(clip, { loop })` and `playback.stop()`. Do not emit 'play-clip' yourself. */
+  playback: Playback
   /** Typed-by-convention channel to a feature's code in the window; see src/shared/features/. */
   bus: FeatureBus
   /** Save a generated MIDI file where the player can find it; returns its path. */

@@ -1,3 +1,4 @@
+import { Playback } from '../src/main/playback'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,7 +26,7 @@ describe.skipIf(!process.env.JAM_LIVE)('live agent: arranging', () => {
         }, 100)
       })
     const jam = new JamSession(
-      { transcript: new Transcript(), memory: new TasteMemory(await mkdtemp(join(tmpdir(), 'jam-live-'))), now: () => 0, emit: (e) => events.push(e), bus: new FeatureBus((e) => events.push(e)), saveMidi: async (name) => `/tmp/${name}.mid` },
+      { transcript: new Transcript(), memory: new TasteMemory(await mkdtemp(join(tmpdir(), 'jam-live-'))), now: () => 0, emit: (e) => events.push(e), bus: new FeatureBus((e) => events.push(e)), playback: new Playback((e) => events.push(e)), saveMidi: async (name) => `/tmp/${name}.mid` },
       { model: process.env.JAM_AGENT_MODEL ?? 'claude-opus-5-5', voice: false, onSpeech: (chunk) => (spoken += chunk), onSpeechEnd: () => undefined },
     )
     await jam.start()

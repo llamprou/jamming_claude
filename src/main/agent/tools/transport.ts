@@ -52,6 +52,19 @@ export const transport: ToolModuleFactory = (ctx) => {
     return state
   }
 
+  // Offer the transport to every other module that plays clips (core `play`, the
+  // arrangement library): anything looping, or anything at all while layers are
+  // running, comes in on the bar line in time. A lone one-shot is left to the simple player.
+  ctx.playback.provide({
+    play: async (clip, { loop, id }) => {
+      if (!loop && !layersPlaying) return null
+      const state = await ask({ type: 'play', id, clip, loop, start: 'bar', bpm: clip.bpm, player: hear() })
+      const wait = state.startsInSeconds ?? 0
+      return `${loop ? 'Looping' : 'Playing once'} in time at ${state.bpm.toFixed(0)} bpm, coming in ${wait < 0.25 ? 'now' : `on the bar line in ${wait.toFixed(1)}s`}. It keeps going until stopped.`
+    },
+    stop: () => void ask({ type: 'stop', at: 'now' }).catch(() => undefined),
+  })
+
   const failed = (error: unknown) => text(`The transport did not respond: ${error instanceof Error ? error.message : String(error)}`)
 
   const describePlayer = (player: PlayerBeat | null): string => {

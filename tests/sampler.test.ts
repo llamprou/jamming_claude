@@ -6,6 +6,7 @@ import type { MainEvent } from '@shared/ipc'
 import { SAMPLER, type CaptureReply, type SamplerRequest, type SavedInstrument } from '@shared/features/sampler'
 import { captureTakes, detectNotes, findLoop, findOnset, isolatedNotes, loudness, measurePitch, normalise, peakEnvelope, peakLevel, tidyEdges, trimLeadingSilence } from '@shared/music/capture'
 import { detectPitch, hzToMidi } from '@shared/music/pitch'
+import { Playback } from '../src/main/playback'
 import { coverage, envelopeAt, gmDrumVoice, instrumentForTrack, midiToHz, noteEnvelope, pickZone, playbackRate, renderNote, type InstrumentDef, type Zone } from '@shared/music/sampler'
 import { drumHit, electricPiano, generateStandIn, pluck } from '@shared/music/synthkit'
 import { Transcript } from '@shared/music/transcript'
@@ -402,7 +403,7 @@ describe('captured instruments on disk and the agent tools', () => {
 
   function session(window = fakeWindow()) {
     const transcript = new Transcript()
-    const ctx: ToolContext = { transcript, memory: new TasteMemory(join(dir, 'taste')), now: () => 106, emit: () => undefined, bus: window.bus, saveMidi: async () => '' }
+    const ctx: ToolContext = { transcript, memory: new TasteMemory(join(dir, 'taste')), now: () => 106, emit: () => undefined, bus: window.bus, playback: new Playback(() => undefined), saveMidi: async () => '' }
     process.env.JAM_DATA_DIR = dir
     const module = instruments(ctx)!
     const call = async (name: string, args: Record<string, unknown>) => {

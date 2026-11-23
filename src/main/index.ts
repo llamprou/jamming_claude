@@ -7,6 +7,7 @@ import { Transcript } from '@shared/music/transcript'
 import type { NoteEvent } from '@shared/music/types'
 import { JamSession } from './agent/session'
 import { FeatureBus } from './bus'
+import { Playback } from './playback'
 import { TasteMemory } from './memory/taste'
 import { Voice } from './voice/voice'
 
@@ -34,6 +35,7 @@ async function main(): Promise<void> {
   const now = () => (performance.now() - startedAt) / 1000
   const transcript = new Transcript()
   const bus = new FeatureBus(emit)
+  const playback = new Playback(emit)
   const memory = new TasteMemory(process.env.JAM_DATA_DIR ?? join(app.getPath('userData'), 'taste'))
 
   const missing = ['ANTHROPIC_API_KEY', 'DEEPGRAM_API_KEY', 'CARTESIA_API_KEY', 'JAM_TTS_VOICE_ID'].filter((name) => !process.env[name])
@@ -47,6 +49,7 @@ async function main(): Promise<void> {
       now,
       emit,
       bus,
+      playback,
       saveMidi: async (name, midi) => {
         const dir = process.env.JAM_DATA_DIR ? join(process.env.JAM_DATA_DIR, 'ideas') : join(app.getPath('music'), 'Jamming Claude')
         await mkdir(dir, { recursive: true })
@@ -104,7 +107,7 @@ async function main(): Promise<void> {
   ipcMain.on(CHANNELS.interrupt, () => {
     voice?.cancel()
     emit({ type: 'tts-flush' })
-    emit({ type: 'stop-playback' })
+    playback.stop()
     void jam.interrupt()
   })
 
@@ -117,7 +120,8 @@ async function main(): Promise<void> {
     width: 1200,
     height: 800,
     title: 'Jamming Claude',
-    webPreferences: { preload: join(import.meta.dirname, '../preload/index.mjs'), sandbox: false },
+    // Keep timers running at full rate when the window is hidden: the transport schedules sound from them.
+    webPreferences: { backgroundThrottling: false, preload: join(import.meta.dirname, '../preload/index.mjs'), sandbox: false },
   })
   window.webContents.on('did-finish-load', () => emit({ type: 'config', voice: voiceEnabled, missing }))
   if (process.env.ELECTRON_RENDERER_URL) await window.loadURL(process.env.ELECTRON_RENDERER_URL)

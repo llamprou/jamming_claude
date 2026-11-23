@@ -78,9 +78,9 @@ export const core: ToolModuleFactory = (ctx) => {
       chords: z.array(z.string()).optional().describe('Chord symbols, played as block chords'),
       beats_per_chord: z.number().positive().default(4),
       tracks: z.array(trackSchema).optional(),
-      loop: z.boolean().default(false),
+      loop: z.boolean().default(false).describe('Keep repeating in time until stopped'),
     },
-    async ({ name, bpm, chords, beats_per_chord, tracks }) => {
+    async ({ name, bpm, chords, beats_per_chord, tracks, loop }) => {
       const clip: Clip = { name, bpm, tracks: [...(tracks ?? [])] }
       if (chords?.length) {
         const unknown = chords.filter((c) => chordPitches(c).length === 0)
@@ -90,9 +90,9 @@ export const core: ToolModuleFactory = (ctx) => {
       if (clip.tracks.every((t) => t.notes.length === 0)) return text('Nothing to play: give chords or tracks with notes.')
       const midi = clipToMidi(clip)
       const savedTo = await ctx.saveMidi(name, midi).catch(() => undefined)
-      ctx.emit({ type: 'play-clip', clip, savedTo })
+      const how = await ctx.playback.play(clip, { loop, savedTo })
       const seconds = (clipLengthBeats(clip) * 60) / bpm
-      return text(`Playing "${name}" now: ${clipToNotes(clip).length} notes, ${seconds.toFixed(1)}s at ${bpm} bpm.${savedTo ? ` MIDI file saved as ${savedTo}.` : ''}`)
+      return text(`"${name}": ${clipToNotes(clip).length} notes, ${seconds.toFixed(1)}s at ${bpm} bpm. ${how}${savedTo ? ` MIDI file saved as ${savedTo}.` : ''}`)
     },
   )
 
@@ -107,8 +107,8 @@ export const core: ToolModuleFactory = (ctx) => {
   )
 
   const stop = tool('stop', 'Stop anything you are playing.', {}, async () => {
-    ctx.emit({ type: 'stop-playback' })
-    return text('Stopped.')
+    ctx.playback.stop()
+    return text('Stopped everything that was playing.')
   })
 
   return {
@@ -116,7 +116,7 @@ export const core: ToolModuleFactory = (ctx) => {
     guide: `- listen: what they've been playing just now (chords, key, tempo and groove, notes). Call it before you comment on or build from their playing; don't guess what you heard. For audio input the result says how recent the corrected transcription is.
 - show / hide: you run the screen. The player has no buttons or menus and is not typing; their hands are on an instrument. When they ask to see something, open it with show; when they ask you to close something or clear the screen, use hide. Open a view on your own whenever seeing would help, and close ones that are no longer relevant so the screen stays uncluttered. Showing is much faster than describing. Views: ${VIEWS.map((v) => `${v.kind} (${v.description})`).join('; ')}.
 - play: play a musical idea through the speakers: a progression, a melody, a bass line, a groove, a solo. This is how you jam. When they ask for an idea, play it rather than describing it, and say a few words while it starts. Each idea is also saved as a MIDI file; mention where only if they ask.
-- stop: stop your playback.`,
+- stop: silence everything you are playing, loops included.`,
     tools: [listen, show, hide, play, stop],
   }
 }

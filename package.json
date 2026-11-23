@@ -18,6 +18,7 @@
     "check": "npm run typecheck && npm test && npm run build",
     "smoke": "node scripts/smoke.mjs",
     "smoke:sampler": "node scripts/smoke-sampler.mjs",
+    "smoke:transport": "node scripts/transport-check.mjs",
     "dist:mac": "electron-vite build && electron-builder --mac"
   },
   "dependencies": {

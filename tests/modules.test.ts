@@ -1,3 +1,4 @@
+import { Playback } from '../src/main/playback'
 import { tool } from '@anthropic-ai/claude-agent-sdk'
 import { describe, expect, it } from 'vitest'
 import type { MainEvent } from '@shared/ipc'
@@ -13,7 +14,7 @@ const context = (events: MainEvent[] = []): ToolContext => ({
   memory: new TasteMemory('/tmp/jam-modules-test'),
   now: () => 0,
   emit: (e) => events.push(e),
-  bus: new FeatureBus((e) => events.push(e)),
+  bus: new FeatureBus((e) => events.push(e)), playback: new Playback((e) => events.push(e)),
   saveMidi: async () => '/tmp/x.mid',
 })
 
@@ -58,5 +59,36 @@ describe('feature bus', () => {
     off()
     bus.deliver('looper', 3)
     expect(heard).toEqual([1])
+  })
+})
+
+describe('playback', () => {
+  const clip = { name: 'idea', bpm: 100, tracks: [] }
+
+  it('plays once by default, and lets a provider take looping or in-time clips', async () => {
+    const events: MainEvent[] = []
+    const playback = new Playback((e) => events.push(e))
+    expect(await playback.play(clip, { loop: true })).toMatch(/once/)
+    expect(events).toEqual([{ type: 'play-clip', clip, savedTo: undefined }])
+
+    const taken: string[] = []
+    let stopped = 0
+    playback.provide({ play: async (c, o) => (o.loop ? (taken.push(`${o.id}:${c.name}`), 'Looping in time.') : null), stop: () => void stopped++ })
+    expect(await playback.play(clip, { loop: true, id: 'arrangement' })).toBe('Looping in time.')
+    expect(await playback.play(clip)).toMatch(/once/) // provider declined
+    expect(taken).toEqual(['arrangement:idea'])
+    expect(events.filter((e) => e.type === 'play-clip')).toHaveLength(2)
+
+    playback.stop()
+    expect(stopped).toBe(1)
+    expect(events.at(-1)).toEqual({ type: 'stop-playback' })
+  })
+
+  it('falls back to playing once if the provider fails', async () => {
+    const events: MainEvent[] = []
+    const playback = new Playback((e) => events.push(e))
+    playback.provide({ play: async () => Promise.reject(new Error('window gone')), stop: () => undefined })
+    expect(await playback.play(clip, { loop: true })).toMatch(/once/)
+    expect(events).toHaveLength(1)
   })
 })

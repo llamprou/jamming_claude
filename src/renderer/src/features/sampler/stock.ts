@@ -54,15 +54,16 @@ async function decodeMono(url: string, maxSeconds: number): Promise<{ samples: F
 async function loadSampled(entry: StockManifest['instruments'][number]): Promise<LoadedInstrument> {
   const buffers = new Map<string, AudioBuffer>()
   let loudest = 0
-  await Promise.all(
-    entry.zones.map(async (zone) => {
-      const url = urls[`./stock/${zone.sample}`]
-      if (!url) throw new Error(`stock sample ${zone.sample} is listed but was not bundled`)
-      const { samples, sampleRate } = await decodeMono(url, entry.maxSeconds ?? 4)
-      loudest = Math.max(loudest, peakLevel(samples))
-      buffers.set(zone.sample, monoBuffer(samples, sampleRate))
-    }),
-  )
+  // One at a time, yielding between files: decoding everything at once stalls
+  // the window for about a second at launch, which the transport's timing cannot afford.
+  for (const zone of entry.zones) {
+    const url = urls[`./stock/${zone.sample}`]
+    if (!url) throw new Error(`stock sample ${zone.sample} is listed but was not bundled`)
+    const { samples, sampleRate } = await decodeMono(url, entry.maxSeconds ?? 4)
+    loudest = Math.max(loudest, peakLevel(samples))
+    buffers.set(zone.sample, monoBuffer(samples, sampleRate))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
   // Bring the loudest recording to full scale; recordings keep their balance with each other.
   const gain = (LEVEL[entry.kind] * 0.9) / (loudest || 1)
   return { def: { name: entry.name, label: entry.label, kind: entry.kind, origin: 'sampled', zones: entry.zones, release: entry.release, gain, credit: entry.credit }, buffers }
@@ -78,15 +79,13 @@ function loadStandIn(which: StandIn): LoadedInstrument {
 /** Load real samples where they are bundled, stand-ins for the rest. */
 export async function loadStock(): Promise<void> {
   const entries = Object.values(manifests)[0]?.instruments ?? []
-  await Promise.all(
-    entries.map(async (entry) => {
-      try {
-        addInstrument(await loadSampled(entry))
-      } catch (error) {
-        console.warn(`sampler: could not load stock ${entry.name}, using a synthesized stand-in`, error)
-      }
-    }),
-  )
+  for (const entry of entries) {
+    try {
+      addInstrument(await loadSampled(entry))
+    } catch (error) {
+      console.warn(`sampler: could not load stock ${entry.name}, using a synthesized stand-in`, error)
+    }
+  }
   for (const which of STAND_INS) {
     if (getInstrument(which)) continue
     addInstrument(loadStandIn(which))

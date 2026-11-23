@@ -157,10 +157,10 @@ try {
   check(Math.abs(state.bpm - 126) < 0.5, `tempo should have followed the player to 126, got ${state.bpm.toFixed(2)}`)
   check(Math.abs(state.phaseErrorMs) < 15, `beats should have lined up with the player, still ${state.phaseErrorMs?.toFixed(1)} ms apart`)
   log = await request({ type: 'log' })
-  // The lead plays every two beats: 1.000 s at 120 bpm, 0.952 s at 126, a little less while catching up.
+  // The lead plays every two beats: 1.000 s at 120 bpm, 0.952 s at 126, and up to 6% either side while its beat is pulled onto the player's.
   const times = log.filter((e) => e.kind === 'note' && e.layer === 'lead' && e.time > now).map((e) => e.time)
   const gaps = times.slice(1).map((t, i) => t - times[i])
-  check(gaps.length > 6 && gaps.every((g) => g > 0.88 && g < 1.01), `following should never jump: note gaps ${Math.min(...gaps).toFixed(3)}-${Math.max(...gaps).toFixed(3)} s`)
+  check(gaps.length > 6 && gaps.every((g) => g > 0.88 && g < 1.07), `following should never jump: note gaps ${Math.min(...gaps).toFixed(3)}-${Math.max(...gaps).toFixed(3)} s`)
   check(state.late === 0, 'events were late while following')
   // Our beat now falls on the player's.
   const ownBeatTime = state.grid.anchorTime + ((Math.ceil(state.beat) - state.grid.anchorBeat) * 60) / state.grid.bpm

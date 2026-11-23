@@ -1,3 +1,4 @@
+import { Playback } from '../src/main/playback'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import type { MainEvent } from '@shared/ipc'
@@ -451,7 +452,7 @@ describe('arrange tools', () => {
       memory: new TasteMemory('/tmp/jam-arrange-test'),
       now: () => 20,
       emit: (e) => events.push(e),
-      bus: new FeatureBus((e) => events.push(e)),
+      bus: new FeatureBus((e) => events.push(e)), playback: new Playback((e) => events.push(e)),
       saveMidi: async (name) => `/tmp/${name}.mid`,
     }
     const module = arrange(ctx)!
@@ -473,11 +474,12 @@ describe('arrange tools', () => {
     const started = await call('arrange_start', { chords: ['C', 'Am', 'F', 'G'], bpm: 110 })
     expect(started).toContain('C major, 110 bpm')
     expect(started).toContain('C(4) Am(4) F(4) G(4)')
-    expect(started).toContain('Playing it now')
+    expect(started).toContain('Playing once, now')
     expect(clips()).toHaveLength(1)
     expect(events[0]).toMatchObject({ type: 'play-clip', savedTo: '/tmp/arrangement.mid' })
-    // A four-bar loop is played twice so there is time to hear it.
-    expect(clipLengthBeats(clips()[0]!)).toBeGreaterThan(31)
+    // One pass of the four bars: the transport loops it in the app.
+    expect(clipLengthBeats(clips()[0]!)).toBeGreaterThan(15)
+    expect(clipLengthBeats(clips()[0]!)).toBeLessThanOrEqual(16)
 
     const reharmonized = await call('arrange_reharmonize', { strategy: 'sevenths' })
     expect(reharmonized).toContain('C(4) Am(4) F(4) G(4)  ->  Cmaj7(4) Am7(4) Fmaj7(4) G7(4)')
