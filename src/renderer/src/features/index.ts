@@ -4,12 +4,14 @@
  * (the feature bus, mic blocks, the voice registry), and is listed once below.
  * start() runs once when the window opens.
  */
+import { start as camera } from './camera'
 import { start as sampler } from './sampler'
 import { start as transport } from './transport'
 
 const features: Array<() => void | Promise<void>> = [
   sampler,
   transport,
+  camera,
 ]
 
 export function startFeatures(): void {

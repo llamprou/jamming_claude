@@ -9,8 +9,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "postinstall": "node scripts/ensure-electron.mjs && (node scripts/fetch-samples.mjs || echo \"Instrument samples were not fetched; the app will use synthesized stand-ins. Run npm run samples to retry.\")",
-    "samples": "node scripts/fetch-samples.mjs",
+    "postinstall": "node scripts/ensure-electron.mjs && (node scripts/fetch-samples.mjs && node scripts/fetch-vision-assets.mjs || echo \"Some instrument samples or the hand-tracking model were not fetched; the app will use stand-in sounds and report hand tracking as unavailable. Run npm run assets to retry.\")",
+    "assets": "node scripts/fetch-samples.mjs && node scripts/fetch-vision-assets.mjs",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -19,6 +19,8 @@
     "smoke": "node scripts/smoke.mjs",
     "smoke:sampler": "node scripts/smoke-sampler.mjs",
     "smoke:transport": "node scripts/transport-check.mjs",
+    "smoke:vision": "node scripts/smoke-vision.mjs",
+    "smoke:all": "npm run smoke && npm run smoke:sampler && npm run smoke:transport && npm run smoke:vision",
     "dist:mac": "electron-vite build && electron-builder --mac"
   },
   "dependencies": {
@@ -26,6 +28,7 @@
     "@anthropic-ai/sdk": "^1.12.0",
     "@cartesia/cartesia-js": "^5.2.0",
     "@deepgram/sdk": "^5.20.0",
+    "@mediapipe/tasks-vision": "^1.2.3",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@spotify/basic-pitch": "^1.0.1",
     "@tensorflow/tfjs": "^3.21.0",

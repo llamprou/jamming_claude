@@ -11,3 +11,5 @@ dist/
 .claude/worktrees/
 # downloaded stock instrument samples (node scripts/fetch-samples.mjs)
 src/renderer/src/features/sampler/stock/
+# downloaded by scripts/fetch-vision-assets.mjs (hand tracking model)
+assets/vision/
